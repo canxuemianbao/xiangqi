@@ -18,10 +18,20 @@ class Game extends Pos {
 
   pos() {
     const pos = new Pos(this.toFen())
-    // pos.zobristStack = this.zobristStack.map(_ => _)
-    // pos.checkStack = this.checkStack.map(_ => _)
-    // pos.moveStack = this.moveStack.map(_ => _)
+    pos.zobristStack = this.zobristStack.map(_ => _)
+    pos.checkStack = this.checkStack.map(_ => _)
+    pos.moveStack = this.moveStack.map(_ => _)
     return pos
+  }
+
+  makeMove(move) {
+    super.makeMove(move)
+    this.fenStack.push(this.toFen())
+  }
+
+  unMakeMove() {
+    super.unMakeMove()
+    this.fenStack.pop()
   }
 
   getLegalMove(from, to) {

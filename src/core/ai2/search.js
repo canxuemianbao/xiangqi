@@ -9,6 +9,12 @@ function MinMax(pos, maxDepth = 1) {
   let resultMove = null
 
   const score = (function helper(depth) {
+    //是否发生重复
+    const repScore = pos.repValue(pos.repStatus())
+    if (repScore) {
+      return repScore
+    }
+
     if (depth === 0) {
       return pos.evaluate()
     }
@@ -40,7 +46,7 @@ function MinMax(pos, maxDepth = 1) {
   return resultMove
 }
 
-function ComputerThinkTimer(pos, remainTime = timeout, maxDepth = 4) {
+function ComputerThinkTimer(pos, remainTime = timeout, maxDepth = 20) {
   const finishTime = Date.now() + remainTime
   //置换表
   const hashTable = new HashTable()
@@ -169,6 +175,12 @@ function ComputerThinkTimer(pos, remainTime = timeout, maxDepth = 4) {
         return timeoutValue
       }
 
+      // //是否发生重复
+      // const repScore = pos.repValue(pos.repStatus())
+      // if (repScore) {
+      //   return repScore
+      // }
+
       const zobrist = pos.zobrist
       const ply = pos.moveStack.length
 
@@ -181,16 +193,11 @@ function ComputerThinkTimer(pos, remainTime = timeout, maxDepth = 4) {
 
       //到达水平线，采用静态搜索
       if (depth <= 0) {
-        // const eval = QuiescentSearch(alpha, beta)
-        const eval = pos.evaluate()
+        const eval = QuiescentSearch(alpha, beta)
+        // const eval = pos.evaluate()
+        hashTable.saveHashTable(zobrist, eval, depth, hashExact, null)
         return eval
       }
-
-      // //是否发生重复
-      // const repScore = pos.repValue(pos.repStatus())
-      // if (repScore) {
-      //   return repScore
-      // }
 
       let bestScore = -Infinity
 
@@ -269,16 +276,11 @@ function ComputerThinkTimer(pos, remainTime = timeout, maxDepth = 4) {
   }
 
   let resultMove
-  console.log(PVS(pos, 1))
-  // console.log(PVS(pos, 4))
-  for (let i = 1; i <= 3; i++) {
-    // console.log(i)
-    let bestMove = PVS(pos, i)
-    if(!bestMove){
+
+  for (let i = 1; i <= maxDepth; i++) {
+    const bestMove = PVS(pos, i)
+    if (isFinished && bestMove) {
       console.log(i)
-    }
-    console.log(bestMove)
-    if (isFinished) {
       resultMove = bestMove
     }
 

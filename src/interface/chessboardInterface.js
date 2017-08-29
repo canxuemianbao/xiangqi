@@ -6,36 +6,65 @@ const _ = require('lodash')
 const $ = require("jquery")
 
 class ChessboardInterface {
-  constructor(game = new Game(), startWidth, startHeight, gapWidth, gapHeight) {
+  constructor(game = new Game(), playSide = 0, startWidth, startHeight, gapWidth, gapHeight) {
     this.coordinates = []
     this.chesses = []
     this.game = game
+    this.playSide = playSide
     this.selectedChess = null
     this.constructChessboard(startWidth, startHeight, gapWidth, gapHeight)
     this.constructChesses()
     this.fenToBoard()
     this.considerMove()
+
+    $("#strange").click(() => {
+      
+    })
+
+    $("#back").click(() => {
+      if (this.game.side === this.playSide) {
+        if (this.game.zobristStack.length >= 2) {
+          this.game.unMakeMove()
+          this.game.unMakeMove()
+          this.fenToBoard()
+        }
+      } else {
+        if (this.game.zobristStack.length >= 1) {
+          this.game.unMakeMove()
+          this.fenToBoard()
+        }
+      }
+    })
   }
 
   considerMove() {
     if (this.game.isCheckmated()) {
-      alert(`${this.game.side ? '你赢了' : '你输了'}`)
+      alert(`${this.game.side === this.playSide ? '你输了' : '你赢了'}`)
       return
     }
 
     const repValue = this.game.repValue()
-    if (repValue === banValue){
-      alert('你赢了')
+
+    if (repValue === banValue) {
+      if (this.playSide === this.game.side) {
+        alert('你赢了')
+      } else {
+        alert('你输了')
+      }
       return
-    }else if(repValue === -banValue){
-      alert('你输了')
+    } else if (repValue === -banValue) {
+      if (this.playSide === this.game.side) {
+        alert('你输了')
+      } else {
+        alert('你赢了')
+      }
       return
-    }else if(repValue === drawValue){
+    } else if (repValue === drawValue) {
       alert('和棋')
       return
     }
 
-    if (this.game.side) {
+    if (this.game.side !== this.playSide) {
       return this.moveChess(this.game.search())
     } else {
       const self = this
@@ -43,7 +72,9 @@ class ChessboardInterface {
         const chessDom = document.getElementById(`chess_${i + this.game.sideTag}`)
         if (chessDom) {
           chessDom.onclick = function (ev) {
-            self.getCoordinate(this.pos).classList.remove('selected')
+            if (self.selectedChess) {
+              self.getCoordinate(self.selectedChess.pos).classList.remove('selected')
+            }
             self.selectedChess = chessDom
             self.getCoordinate(this.pos).classList.add('selected')
             ev.stopPropagation()
@@ -72,8 +103,7 @@ class ChessboardInterface {
     if (this.game.isChecking()) {
       alert('将军')
     }
-
-    this.considerMove()
+    setTimeout(this.considerMove.bind(this), 500)
   }
 
   constructChessboard(startWidth, startHeight, gapWidth, gapHeight) {
@@ -175,6 +205,11 @@ class ChessboardInterface {
         this.getCoordinate(lastLastMove.from).classList.remove('lastSelected')
         this.getCoordinate(lastLastMove.to).classList.remove('lastSelecting')
       }
+    } else {
+      this.coordinates.forEach((coordinate)=>{
+        coordinate.classList.remove('lastSelected')
+        coordinate.classList.remove('lastSelecting')
+      })
     }
   }
 }

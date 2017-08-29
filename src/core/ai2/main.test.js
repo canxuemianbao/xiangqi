@@ -785,12 +785,11 @@ function main(fileName, func, maxDepth = 7) {
   const name = ['开局', '中局', '残局'];
 
   [fen1, fen2, fen3].forEach((fen, index) => {
-    const pos = new Pos()
-    pos.fenToBoard(fen)
+    const pos = new Pos(fen)
 
     resultInfo += `${name[index]}(fen为:${fen})\n\n`
 
-    for (let i = 3; i <= maxDepth; i++) {
+    for (let i = 1; i <= maxDepth; i++) {
       const sg_searchNode = new Sg_searchNode()
 
       const start = Date.now()
@@ -915,12 +914,15 @@ function NullMoveAlphaBeta(initialAlpha = -Infinity, initialBeta = Infinity, sg_
 }
 
 // main('MinMax_test_result', MinMaxTest, 4)
-main('AlphaBeta_test_result', AlphaBeta.bind(null, -Infinity, Infinity),5)
+// main('AlphaBeta_test_result', AlphaBeta.bind(null, -Infinity, Infinity), 4)
 // main('NullMoveAlphaBeta_test_result', NullMoveAlphaBeta.bind(null, -Infinity, Infinity),4)
 // main('AlphaBetaWithHashTable_test_result', AlphaBetaWithHashTable.bind(null, -Infinity, Infinity), 4)
 // main('AlphaBetaWithHashTable2_test_result', AlphaBetaWithHashTable2.bind(null, -Infinity, Infinity), 4)
-main('sortedMoveHashTable_test_result', sortedMoveHashTable.bind(null, -Infinity, Infinity), 5)
+// main('sortedMoveHashTable_test_result', sortedMoveHashTable.bind(null, -Infinity, Infinity), 4)
 // main('PVS_test_result', PVS.bind(null, -Infinity, Infinity), 5)
+
+console.log(AlphaBeta(-Infinity, Infinity, new Sg_searchNode(), new Pos(fen1), 4))
+console.log(sortedMoveHashTable(-Infinity, Infinity, new Sg_searchNode(), new Pos(fen1), 4))
 
 // main('iterateSortedHashTable', iterateSortedHashTable.bind(null, -Infinity, Infinity), 4)
 // const pos = new Pos()

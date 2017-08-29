@@ -51,20 +51,13 @@
 	const $ = __webpack_require__(15)
 
 	//'4kr3/9/5c3/5R3/9/4C4/9/9/6n2/5K3 w'
-	const game = new Game('3k5/7R1/9/5P/6b2/7p1/52n1/9/4A4/4KA3 w')
+	const game = new Game()
 
 	// game.setToOriginal()
 
 	window.onload = () => {
-	  const chessboardInterface = new ChessboardInterface(game, 15, 15, 71, 71)
+	  const chessboardInterface = new ChessboardInterface(game, 0, 15, 15, 71, 71)
 	  let strangeNum = 0
-	  $("#strange").click(() => {
-	    localStorage.setItem("strangeNum" + strangeNum, chessboardInterface.game.fen())
-	  })
-
-	  $("#cancel").click(() => {
-	    localStorage.removeItem("strangeNum" + strangeNum--)
-	  })
 	}
 
 /***/ },
@@ -91,10 +84,20 @@
 
 	  pos() {
 	    const pos = new Pos(this.toFen())
-	    // pos.zobristStack = this.zobristStack.map(_ => _)
-	    // pos.checkStack = this.checkStack.map(_ => _)
-	    // pos.moveStack = this.moveStack.map(_ => _)
+	    pos.zobristStack = this.zobristStack.map(_ => _)
+	    pos.checkStack = this.checkStack.map(_ => _)
+	    pos.moveStack = this.moveStack.map(_ => _)
 	    return pos
+	  }
+
+	  makeMove(move) {
+	    super.makeMove(move)
+	    this.fenStack.push(this.toFen())
+	  }
+
+	  unMakeMove() {
+	    super.unMakeMove()
+	    this.fenStack.pop()
 	  }
 
 	  getLegalMove(from, to) {
@@ -542,7 +545,7 @@
 
 	function search(pos) {
 	  const start = Date.now()
-	  const resultMove = ComputerThinkTimer(pos, 100)
+	  const resultMove = ComputerThinkTimer(pos,100)
 	  const end = Date.now()
 
 	  console.log("time consume: " + (end - start))
@@ -575,6 +578,12 @@
 	  let resultMove = null
 
 	  const score = (function helper(depth) {
+	    //是否发生重复
+	    const repScore = pos.repValue(pos.repStatus())
+	    if (repScore) {
+	      return repScore
+	    }
+
 	    if (depth === 0) {
 	      return pos.evaluate()
 	    }
@@ -606,7 +615,7 @@
 	  return resultMove
 	}
 
-	function ComputerThinkTimer(pos, remainTime = timeout, maxDepth = 4) {
+	function ComputerThinkTimer(pos, remainTime = timeout, maxDepth = 20) {
 	  const finishTime = Date.now() + remainTime
 	  //置换表
 	  const hashTable = new HashTable()
@@ -735,6 +744,12 @@
 	        return timeoutValue
 	      }
 
+	      // //是否发生重复
+	      // const repScore = pos.repValue(pos.repStatus())
+	      // if (repScore) {
+	      //   return repScore
+	      // }
+
 	      const zobrist = pos.zobrist
 	      const ply = pos.moveStack.length
 
@@ -747,16 +762,11 @@
 
 	      //到达水平线，采用静态搜索
 	      if (depth <= 0) {
-	        // const eval = QuiescentSearch(alpha, beta)
-	        const eval = pos.evaluate()
+	        const eval = QuiescentSearch(alpha, beta)
+	        // const eval = pos.evaluate()
+	        hashTable.saveHashTable(zobrist, eval, depth, hashExact, null)
 	        return eval
 	      }
-
-	      // //是否发生重复
-	      // const repScore = pos.repValue(pos.repStatus())
-	      // if (repScore) {
-	      //   return repScore
-	      // }
 
 	      let bestScore = -Infinity
 
@@ -835,16 +845,11 @@
 	  }
 
 	  let resultMove
-	  console.log(PVS(pos, 1))
-	  // console.log(PVS(pos, 4))
-	  for (let i = 1; i <= 3; i++) {
-	    // console.log(i)
-	    let bestMove = PVS(pos, i)
-	    if(!bestMove){
+
+	  for (let i = 1; i <= maxDepth; i++) {
+	    const bestMove = PVS(pos, i)
+	    if (isFinished && bestMove) {
 	      console.log(i)
-	    }
-	    console.log(bestMove)
-	    if (isFinished) {
 	      resultMove = bestMove
 	    }
 
@@ -1349,12 +1354,12 @@
 	      //双方重复但未将军
 	      case 1:
 	        return drawValue
-	      //我方长将，对敌方来说返回一个ban值
+	      //我方长将，对我方来说返回一个-ban值
 	      case 3:
-	        return banValue
-	      //敌方长将，对敌方来说返回一个-ban值  
-	      case 5:
 	        return -banValue
+	      //敌方长将，对我方来说返回一个ban值  
+	      case 5:
+	        return banValue
 	      //双方长将
 	      case 7:
 	        return drawValue
@@ -1364,25 +1369,28 @@
 	  repStatus() {
 	    let checkIndex = this.checkStack.length - 2
 	    let zobristIndex = this.zobristStack.length - 2
-	    //首先先看对方的走法
+	    let moveIndex = this.moveStack.length - 1
+
 	    let selfSide = false
-	    let perpCheck = this.checkStack[this.checkStack.length - 1]
-	    let oppPerpCheck = true
+	    let oppPerpCheck = this.checkStack[this.checkStack.length - 1]
+	    let perpCheck = true
 	    while (zobristIndex >= 0) {
-	      if (checkIndex - 1 > 0 && this.moveStack[checkIndex - 1].capture) {
+	      if (this.moveStack[moveIndex].capture) {
 	        return 0
 	      }
+
 	      if (selfSide) {
-	        perpCheck = perpCheck && this.checkStack[checkIndex]
-	        if (this.zobristStack[zobristIndex].equal(this.zobrist)) {
+	        oppPerpCheck = oppPerpCheck && this.checkStack[checkIndex]
+	        if (this.zobrist.equal(this.zobristStack[zobristIndex])) {
 	          return 1 + (oppPerpCheck ? 4 : 0) + (perpCheck ? 2 : 0)
 	        }
 	      } else {
-	        oppPerpCheck = oppPerpCheck && this.checkStack[checkIndex]
+	        perpCheck = perpCheck && this.checkStack[checkIndex]
 	      }
-	      checkIndex--
-	      zobristIndex--
 	      selfSide = !selfSide
+	      zobristIndex--
+	      checkIndex--
+	      moveIndex--
 	    }
 
 	    return 0
@@ -3309,36 +3317,65 @@
 	const $ = __webpack_require__(15)
 
 	class ChessboardInterface {
-	  constructor(game = new Game(), startWidth, startHeight, gapWidth, gapHeight) {
+	  constructor(game = new Game(), playSide = 0, startWidth, startHeight, gapWidth, gapHeight) {
 	    this.coordinates = []
 	    this.chesses = []
 	    this.game = game
+	    this.playSide = playSide
 	    this.selectedChess = null
 	    this.constructChessboard(startWidth, startHeight, gapWidth, gapHeight)
 	    this.constructChesses()
 	    this.fenToBoard()
 	    this.considerMove()
+
+	    $("#strange").click(() => {
+	      
+	    })
+
+	    $("#back").click(() => {
+	      if (this.game.side === this.playSide) {
+	        if (this.game.zobristStack.length >= 2) {
+	          this.game.unMakeMove()
+	          this.game.unMakeMove()
+	          this.fenToBoard()
+	        }
+	      } else {
+	        if (this.game.zobristStack.length >= 1) {
+	          this.game.unMakeMove()
+	          this.fenToBoard()
+	        }
+	      }
+	    })
 	  }
 
 	  considerMove() {
 	    if (this.game.isCheckmated()) {
-	      alert(`${this.game.side ? '你赢了' : '你输了'}`)
+	      alert(`${this.game.side === this.playSide ? '你输了' : '你赢了'}`)
 	      return
 	    }
 
 	    const repValue = this.game.repValue()
-	    if (repValue === banValue){
-	      alert('你赢了')
+
+	    if (repValue === banValue) {
+	      if (this.playSide === this.game.side) {
+	        alert('你赢了')
+	      } else {
+	        alert('你输了')
+	      }
 	      return
-	    }else if(repValue === -banValue){
-	      alert('你输了')
+	    } else if (repValue === -banValue) {
+	      if (this.playSide === this.game.side) {
+	        alert('你输了')
+	      } else {
+	        alert('你赢了')
+	      }
 	      return
-	    }else if(repValue === drawValue){
+	    } else if (repValue === drawValue) {
 	      alert('和棋')
 	      return
 	    }
 
-	    if (this.game.side) {
+	    if (this.game.side !== this.playSide) {
 	      return this.moveChess(this.game.search())
 	    } else {
 	      const self = this
@@ -3346,7 +3383,9 @@
 	        const chessDom = document.getElementById(`chess_${i + this.game.sideTag}`)
 	        if (chessDom) {
 	          chessDom.onclick = function (ev) {
-	            self.getCoordinate(this.pos).classList.remove('selected')
+	            if (self.selectedChess) {
+	              self.getCoordinate(self.selectedChess.pos).classList.remove('selected')
+	            }
 	            self.selectedChess = chessDom
 	            self.getCoordinate(this.pos).classList.add('selected')
 	            ev.stopPropagation()
@@ -3375,8 +3414,7 @@
 	    if (this.game.isChecking()) {
 	      alert('将军')
 	    }
-
-	    this.considerMove()
+	    setTimeout(this.considerMove.bind(this), 500)
 	  }
 
 	  constructChessboard(startWidth, startHeight, gapWidth, gapHeight) {
@@ -3478,6 +3516,11 @@
 	        this.getCoordinate(lastLastMove.from).classList.remove('lastSelected')
 	        this.getCoordinate(lastLastMove.to).classList.remove('lastSelecting')
 	      }
+	    } else {
+	      this.coordinates.forEach((coordinate)=>{
+	        coordinate.classList.remove('lastSelected')
+	        coordinate.classList.remove('lastSelecting')
+	      })
 	    }
 	  }
 	}

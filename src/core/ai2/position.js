@@ -173,12 +173,12 @@ class Pos {
       //双方重复但未将军
       case 1:
         return drawValue
-      //我方长将，对敌方来说返回一个ban值
+      //我方长将，对我方来说返回一个-ban值
       case 3:
-        return banValue
-      //敌方长将，对敌方来说返回一个-ban值  
-      case 5:
         return -banValue
+      //敌方长将，对我方来说返回一个ban值  
+      case 5:
+        return banValue
       //双方长将
       case 7:
         return drawValue
@@ -188,25 +188,28 @@ class Pos {
   repStatus() {
     let checkIndex = this.checkStack.length - 2
     let zobristIndex = this.zobristStack.length - 2
-    //首先先看对方的走法
+    let moveIndex = this.moveStack.length - 1
+
     let selfSide = false
-    let perpCheck = this.checkStack[this.checkStack.length - 1]
-    let oppPerpCheck = true
+    let oppPerpCheck = this.checkStack[this.checkStack.length - 1]
+    let perpCheck = true
     while (zobristIndex >= 0) {
-      if (checkIndex - 1 > 0 && this.moveStack[checkIndex - 1].capture) {
+      if (this.moveStack[moveIndex].capture) {
         return 0
       }
+
       if (selfSide) {
-        perpCheck = perpCheck && this.checkStack[checkIndex]
-        if (this.zobristStack[zobristIndex].equal(this.zobrist)) {
+        oppPerpCheck = oppPerpCheck && this.checkStack[checkIndex]
+        if (this.zobrist.equal(this.zobristStack[zobristIndex])) {
           return 1 + (oppPerpCheck ? 4 : 0) + (perpCheck ? 2 : 0)
         }
       } else {
-        oppPerpCheck = oppPerpCheck && this.checkStack[checkIndex]
+        perpCheck = perpCheck && this.checkStack[checkIndex]
       }
-      checkIndex--
-      zobristIndex--
       selfSide = !selfSide
+      zobristIndex--
+      checkIndex--
+      moveIndex--
     }
 
     return 0

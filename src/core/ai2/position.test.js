@@ -45,10 +45,7 @@ function MinMaxTest(sg_searchNode, pos, maxDepth) {
     let bestScore = -Infinity
 
     for (let move of pos.generateMoves()) {
-      pos.makeMove(move)
-      if (pos.isCheck()) {
-        pos.unMakeMove()
-      } else {
+      if (pos.makeMove(move)) {
         const score = -helper(depth - 1)
         pos.unMakeMove()
 
@@ -82,7 +79,7 @@ describe("position", function () {
     sg_searchNode = new Sg_searchNode()
   })
 
-  describe("fen = rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w",function(){
+  describe("fen = rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w", function () {
     beforeEach(function () {
       pos.setToOriginal()
       sg_searchNode = new Sg_searchNode()
@@ -92,19 +89,19 @@ describe("position", function () {
       MinMaxTest(sg_searchNode, pos, 1)
       console.assert(sg_searchNode.evalNodes === 44)
     })
-  
+
     it("should pass perft", function () {
       MinMaxTest(sg_searchNode, pos, 2)
       console.assert(sg_searchNode.evalNodes === 1920)
-    }) 
+    })
 
     it("should pass perft", function () {
       MinMaxTest(sg_searchNode, pos, 3)
       console.assert(sg_searchNode.evalNodes === 79666)
-    }) 
-  }) 
+    })
+  })
 
-  describe("fen = 3akabR1/9/2n1b4/p1R1p3p/6P2/9/P1P5P/4C4/4c4/2B1KAB2 w",function(){
+  describe("fen = 3akabR1/9/2n1b4/p1R1p3p/6P2/9/P1P5P/4C4/4c4/2B1KAB2 w", function () {
     beforeEach(function () {
       pos.fenToBoard('3akabR1/9/2n1b4/p1R1p3p/6P2/9/P1P5P/4C4/4c4/2B1KAB2 w')
       sg_searchNode = new Sg_searchNode()
@@ -114,17 +111,17 @@ describe("position", function () {
       MinMaxTest(sg_searchNode, pos, 1)
       console.assert(sg_searchNode.evalNodes === 41)
     })
-  
+
     it("should pass perft", function () {
       MinMaxTest(sg_searchNode, pos, 2)
       console.assert(sg_searchNode.evalNodes === 792)
-    }) 
+    })
 
     it("should pass perft", function () {
       MinMaxTest(sg_searchNode, pos, 3)
       console.assert(sg_searchNode.evalNodes === 33531)
-    }) 
-  }) 
+    })
+  })
 })
 
 // let sg_searchNode = new Sg_searchNode()
