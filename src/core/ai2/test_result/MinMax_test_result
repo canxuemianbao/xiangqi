@@ -1,0 +1,72 @@
+开局(fen为:r1bakabr1/9/1cn3n1c/p1p1p1R1p/6p2/2P6/P3P1P1P/1C2C1N2/9/RNBAKAB2 b)
+
+depth = 3, bestMove = from 58 to 186
+ 花费时间为280ms 
+
+        counter      =      1483
+        evalNodes    =      57392
+        betaNodes    =      0
+        pvNodes      =      0
+        alphaNodes   =      0
+        hashNodes    =      0
+        deadNodes    =      0
+
+depth = 4, bestMove = from 56 to 71
+ 花费时间为9282ms 
+
+        counter      =      58875
+        evalNodes    =      2155879
+        betaNodes    =      0
+        pvNodes      =      0
+        alphaNodes   =      0
+        hashNodes    =      0
+        deadNodes    =      0
+
+中局(fen为:2bakab2/9/1c2c1n2/p5p1p/2P4R1/1C2p1P2/P3Pr2P/2N1BC3/4A4/3K1AB2 b)
+
+depth = 3, bestMove = from 105 to 121
+ 花费时间为237ms 
+
+        counter      =      1778
+        evalNodes    =      68472
+        betaNodes    =      0
+        pvNodes      =      0
+        alphaNodes   =      0
+        hashNodes    =      0
+        deadNodes    =      0
+
+depth = 4, bestMove = from 89 to 103
+ 花费时间为8871ms 
+
+        counter      =      70250
+        evalNodes    =      2963446
+        betaNodes    =      0
+        pvNodes      =      0
+        alphaNodes   =      0
+        hashNodes    =      0
+        deadNodes    =      0
+
+残局(fen为:9/2P6/3k5/4c4/2b6/9/4N4/8B/3n1p3/3K5 b)
+
+depth = 3, bestMove = from 184 to 183
+ 花费时间为11ms 
+
+        counter      =      263
+        evalNodes    =      5015
+        betaNodes    =      0
+        pvNodes      =      0
+        alphaNodes   =      0
+        hashNodes    =      0
+        deadNodes    =      0
+
+depth = 4, bestMove = from 184 to 183
+ 花费时间为143ms 
+
+        counter      =      5278
+        evalNodes    =      58651
+        betaNodes    =      0
+        pvNodes      =      0
+        alphaNodes   =      0
+        hashNodes    =      0
+        deadNodes    =      13
+

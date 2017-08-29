@@ -1,0 +1,63 @@
+.chess{
+  width: 50px;
+  height: 50px;
+  border-radius: 25px;
+  background-size:50px;
+}
+
+#chess_27,#chess_28,#chess_29,#chess_30,#chess_31{
+  background-image: url('../images/red_bing.png');
+}
+
+#chess_25,#chess_26{
+  background-image: url('../images/red_pao.png');
+}
+
+#chess_23,#chess_24{
+  background-image: url('../images/red_che.png');
+}
+
+#chess_21,#chess_22{
+  background-image: url('../images/red_ma.png');
+}
+
+#chess_17,#chess_18{
+  background-image: url('../images/red_shi.png');
+}
+
+#chess_19,#chess_20{
+  background-image: url('../images/red_xiang.png');
+}
+
+#chess_16{
+  background-image: url('../images/red_shuai.png');
+}
+
+#chess_43,#chess_44,#chess_45,#chess_46,#chess_47{
+  background-image: url('../images/black_bing.png');
+}
+
+#chess_39,#chess_40{
+  background-image: url('../images/black_che.png');
+}
+
+#chess_37,#chess_38{
+  background-image: url('../images/black_ma.png');
+}
+
+#chess_35,#chess_36{
+  background-image: url('../images/black_xiang.png');
+}
+
+#chess_33,#chess_34{
+  background-image: url('../images/black_shi.png');
+}
+
+#chess_41,#chess_42{
+  background-image: url('../images/black_pao.png');
+}
+
+#chess_32{
+  background-image: url('../images/black_shuai.png');
+}
+

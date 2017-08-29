@@ -1,0 +1,37 @@
+#chessboard-container{
+  position: relative;
+  margin: auto;
+  top:20px;
+  width: 600px;
+}
+
+.chessboard{
+  width: 100%;
+}
+
+.coordinate{
+  /*position: absolute;*/
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transform: translate(-50%,-50%);
+  /*background-color: red;*/
+}
+
+.coordinate.selected{
+  position: absolute;
+  background-size: 80%;
+  background-repeat: no-repeat;
+  background-image: url("../images/border.png");
+  background-position: center;
+}
+
+.coordinate.lastSelected,.coordinate.lastSelecting{
+  position: absolute;
+  background-size: 80%;
+  background-repeat: no-repeat;
+  background-image: url("../images/red_border.png");
+  background-position: center;
+}
+
+
