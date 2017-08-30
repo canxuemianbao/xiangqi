@@ -73,15 +73,14 @@ function MinMaxTest(sg_searchNode, pos, maxDepth) {
 
 describe("position", function () {
   let sg_searchNode = new Sg_searchNode()
-  let pos = new Pos()
 
   beforeEach(function () {
     sg_searchNode = new Sg_searchNode()
   })
 
   describe("fen = rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w", function () {
+    let pos = Pos.setToOriginal()
     beforeEach(function () {
-      pos.setToOriginal()
       sg_searchNode = new Sg_searchNode()
     })
 
@@ -102,8 +101,9 @@ describe("position", function () {
   })
 
   describe("fen = 3akabR1/9/2n1b4/p1R1p3p/6P2/9/P1P5P/4C4/4c4/2B1KAB2 w", function () {
+    let pos
     beforeEach(function () {
-      pos.fenToBoard('3akabR1/9/2n1b4/p1R1p3p/6P2/9/P1P5P/4C4/4c4/2B1KAB2 w')
+      pos = new Pos('3akabR1/9/2n1b4/p1R1p3p/6P2/9/P1P5P/4C4/4c4/2B1KAB2 w')
       sg_searchNode = new Sg_searchNode()
     })
 

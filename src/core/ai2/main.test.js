@@ -914,19 +914,18 @@ function NullMoveAlphaBeta(initialAlpha = -Infinity, initialBeta = Infinity, sg_
 }
 
 // main('MinMax_test_result', MinMaxTest, 4)
-// main('AlphaBeta_test_result', AlphaBeta.bind(null, -Infinity, Infinity), 4)
+// main('AlphaBeta_test_result', AlphaBeta.bind(null, -Infinity, Infinity), 7)
 // main('NullMoveAlphaBeta_test_result', NullMoveAlphaBeta.bind(null, -Infinity, Infinity),4)
 // main('AlphaBetaWithHashTable_test_result', AlphaBetaWithHashTable.bind(null, -Infinity, Infinity), 4)
 // main('AlphaBetaWithHashTable2_test_result', AlphaBetaWithHashTable2.bind(null, -Infinity, Infinity), 4)
 // main('sortedMoveHashTable_test_result', sortedMoveHashTable.bind(null, -Infinity, Infinity), 4)
-// main('PVS_test_result', PVS.bind(null, -Infinity, Infinity), 5)
+// main('PVS_test_result', PVS.bind(null, -Infinity, Infinity), 7)
 
-console.log(AlphaBeta(-Infinity, Infinity, new Sg_searchNode(), new Pos(fen1), 4))
-console.log(sortedMoveHashTable(-Infinity, Infinity, new Sg_searchNode(), new Pos(fen1), 4))
+// console.log(PVS(-Infinity,Infinity,new Sg_searchNode(),new Pos(),4))
+console.log(MinMaxTest(new Sg_searchNode(),new Pos(),4))
+
+// console.log(AlphaBeta(-Infinity, Infinity, new Sg_searchNode(), new Pos(fen1), 4))
+
+// console.log(sortedMoveHashTable(-Infinity, Infinity, new Sg_searchNode(), new Pos(fen1), 4))
 
 // main('iterateSortedHashTable', iterateSortedHashTable.bind(null, -Infinity, Infinity), 4)
-// const pos = new Pos()
-// pos.fenToBoard('2bakab2/9/1c2c1n2/p5p1p/2P4R1/1C2p1P2/P3Pr2P/2N1BC3/4A4/3K1AB2 b')
-
-// console.log(AlphaBeta(-Infinity, Infinity, new Sg_searchNode(), pos, 5))
-// console.log(NullMoveAlphaBeta(-Infinity, Infinity, new Sg_searchNode(), pos, 5))

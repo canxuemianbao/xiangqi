@@ -2,7 +2,7 @@ const { ComputerThinkTimer, AlphaBeta, checkmatedValue } = require('./search')
 
 function search(pos) {
   const start = Date.now()
-  const resultMove = ComputerThinkTimer(pos,100)
+  const resultMove = ComputerThinkTimer(pos,1000)
   const end = Date.now()
 
   console.log("time consume: " + (end - start))

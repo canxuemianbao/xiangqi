@@ -6,9 +6,9 @@ const { search, Pos, MinMax, drawValue, banValue } = require('./ai2/main')
 
 
 class Game extends Pos {
-  constructor(fen = 'rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w') {
-    super(fen)
-    this.fenStack = [this.toFen()]
+  constructor(fen = 'rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w', moveStack = []) {
+    super(fen, moveStack)
+    this.intialFen = fen
   }
 
   //返回一个move
@@ -16,37 +16,21 @@ class Game extends Pos {
     return search(this.pos())
   }
 
+  record() {
+    return [this.intialFen, ...this.moveStack]
+  }
+
+  restore(fen, moveStack) {
+    return new Game(fen, moveStack)
+  }
+
   pos() {
-    const pos = new Pos(this.toFen())
-    pos.zobristStack = this.zobristStack.map(_ => _)
-    pos.checkStack = this.checkStack.map(_ => _)
-    pos.moveStack = this.moveStack.map(_ => _)
+    const pos = new Pos(this.intialFen, this.moveStack)
     return pos
-  }
-
-  makeMove(move) {
-    super.makeMove(move)
-    this.fenStack.push(this.toFen())
-  }
-
-  unMakeMove() {
-    super.unMakeMove()
-    this.fenStack.pop()
-  }
-
-  getLegalMove(from, to) {
-    return this.generateMoves().find((move) => move.from === from && move.to === to)
   }
 
   isCheckmated() {
     return MinMax(this.pos()) == null
-  }
-
-  isChecking() {
-    this.makeEmptyMove()
-    const isChecking = this.isCheck()
-    this.unMakeEmptyMove()
-    return isChecking
   }
 }
 

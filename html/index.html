@@ -2,20 +2,23 @@
 
 <head>
   <meta charset="utf8">
-  <script src="../bin/main.bundle.js"></script>
+  <script src="/bin/main.bundle.js"></script>
 
-  <link rel="stylesheet" type="text/css" href="../css/reset.css" />
-  <link rel="stylesheet" type="text/css" href="../css/chessboard.css" media="screen" />
-  <link rel="stylesheet" type="text/css" href="../css/chess.css" />
+  <link rel="stylesheet" type="text/css" href="/css/reset.css" />
+  <link rel="stylesheet" type="text/css" href="/css/chessboard.css" media="screen" />
+  <link rel="stylesheet" type="text/css" href="/css/chess.css" />
+  <link rel="stylesheet" type="text/css" href="http://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.css">
 </head>
 
 <body>
   <div style="position:absolute;top:50%;">
-    <button id='strange'>奇怪的走法</button>
+    <input id='fileName' /> <button id='strange'>奇怪的走法(描述原因)</button>
     <button id='back'>悔棋</button>
+    <br/>
+    <input id='restoreFileName' /> <button id='restore'>根据原因恢复</button>
   </div>
   <div id='chessboard-container'>
-    <img class="chessboard" src="../images/chessboard.png"></img>
+    <img class="chessboard" src="/images/chessboard.png"></img>
   </div>
 </body>
 

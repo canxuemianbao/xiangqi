@@ -4,42 +4,90 @@ const { CharToInt } = require('../core/ai2/util')
 const { banValue, drawValue } = require('../core/ai2/evaluate')
 const _ = require('lodash')
 const $ = require("jquery")
+const toastr = require('toastr')
 
 class ChessboardInterface {
   constructor(game = new Game(), playSide = 0, startWidth, startHeight, gapWidth, gapHeight) {
     this.coordinates = []
     this.chesses = []
-    this.game = game
     this.playSide = playSide
     this.selectedChess = null
     this.constructChessboard(startWidth, startHeight, gapWidth, gapHeight)
     this.constructChesses()
-    this.fenToBoard()
+    this.initialGame(game)
     this.considerMove()
 
     $("#strange").click(() => {
-      
+      if (document.getElementById('fileName').value == '') {
+        toastr.error('记录失败')
+        return
+      }
+      fetch('/record', {
+        method: 'post',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ fileName: document.getElementById('fileName').value, record: this.game.record() })
+      })
+        .then((response) => {
+          toastr.success('记录成功')
+        })
+        .catch(() => {
+          toastr.error('记录失败')
+        })
     })
 
     $("#back").click(() => {
       if (this.game.side === this.playSide) {
         if (this.game.zobristStack.length >= 2) {
-          this.game.unMakeMove()
-          this.game.unMakeMove()
-          this.fenToBoard()
+          this.unMoveChess()
+          this.unMoveChess()
         }
       } else {
         if (this.game.zobristStack.length >= 1) {
-          this.game.unMakeMove()
-          this.fenToBoard()
+          this.unMoveChess()
         }
       }
     })
+
+    $("#restore").click(() => {
+      if (document.getElementById('restoreFileName').value == '') {
+        toastr.error('恢复失败')
+        return
+      }
+      fetch('/restore', {
+        method: 'get',
+        headers: {
+          'Accept': 'application/json',
+          'fileName': document.getElementById('restoreFileName').value
+        }
+      })
+        .then((response) => {
+          return response.json()
+        })
+        .then((data) => {
+          this.initialGame(this.game.restore(data.shift(), data))
+        })
+        .catch((err) => {
+          console.log(err)
+          toastr.error('恢复失败')
+        })
+    })
+  }
+
+  initialGame(game) {
+    this.game = game
+    this.display()
   }
 
   considerMove() {
     if (this.game.isCheckmated()) {
-      alert(`${this.game.side === this.playSide ? '你输了' : '你赢了'}`)
+      if (this.game.side === this.playSide) {
+        toastr.warning("你输了")
+      } else {
+        toastr.success("你赢了")
+      }
       return
     }
 
@@ -47,20 +95,20 @@ class ChessboardInterface {
 
     if (repValue === banValue) {
       if (this.playSide === this.game.side) {
-        alert('你赢了')
+        toastr.success("你赢了")
       } else {
-        alert('你输了')
+        toastr.warning("你输了")
       }
       return
     } else if (repValue === -banValue) {
       if (this.playSide === this.game.side) {
-        alert('你输了')
+        toastr.warning('你输了')
       } else {
-        alert('你赢了')
+        toastr.success('你赢了')
       }
       return
     } else if (repValue === drawValue) {
-      alert('和棋')
+      toastr.info('和棋')
       return
     }
 
@@ -99,11 +147,17 @@ class ChessboardInterface {
 
   moveChess(move) {
     this.game.makeMove(move)
-    this.fenToBoard()
+
+    this.display()
     if (this.game.isChecking()) {
-      alert('将军')
+      toastr.warning('将军')
     }
     setTimeout(this.considerMove.bind(this), 500)
+  }
+
+  unMoveChess() {
+    this.game.unMakeMove()
+    this.display()
   }
 
   constructChessboard(startWidth, startHeight, gapWidth, gapHeight) {
@@ -160,7 +214,7 @@ class ChessboardInterface {
     }
   }
 
-  fenToBoard() {
+  display() {
     const fen = this.game.toFen()
 
     const pc = {}
@@ -195,22 +249,18 @@ class ChessboardInterface {
       }
     })
 
+    this.coordinates.forEach((coordinate) => {
+      coordinate.classList.remove('lastSelected')
+      coordinate.classList.remove('lastSelecting')
+      coordinate.classList.remove('selected')
+    })
+
     if (this.game.moveStack.length >= 1) {
       const lastMove = this.game.moveStack[this.game.moveStack.length - 1]
       this.getCoordinate(lastMove.from).classList.add('lastSelected')
       this.getCoordinate(lastMove.to).classList.add('lastSelecting')
-
-      if (this.game.moveStack.length >= 2) {
-        const lastLastMove = this.game.moveStack[this.game.moveStack.length - 2]
-        this.getCoordinate(lastLastMove.from).classList.remove('lastSelected')
-        this.getCoordinate(lastLastMove.to).classList.remove('lastSelecting')
-      }
-    } else {
-      this.coordinates.forEach((coordinate)=>{
-        coordinate.classList.remove('lastSelected')
-        coordinate.classList.remove('lastSelecting')
-      })
     }
+    this.selectedChess = null
   }
 }
 

@@ -1,20 +1,16 @@
 const Pos = require('./position')
 const { checkmatedValue, winValue, banValue, drawValue } = require('./evaluate')
 const { HashTable, hashAlpha, hashBeta, hashExact } = require('./hashtable')
+const { Move } = require('./util')
 
 const timeout = 5 * 1000
 const timeoutValue = 300000
 
+//用于判断是否将死
 function MinMax(pos, maxDepth = 1) {
   let resultMove = null
 
   const score = (function helper(depth) {
-    //是否发生重复
-    const repScore = pos.repValue(pos.repStatus())
-    if (repScore) {
-      return repScore
-    }
-
     if (depth === 0) {
       return pos.evaluate()
     }
@@ -46,251 +42,241 @@ function MinMax(pos, maxDepth = 1) {
   return resultMove
 }
 
-function ComputerThinkTimer(pos, remainTime = timeout, maxDepth = 20) {
-  const finishTime = Date.now() + remainTime
-  //置换表
-  const hashTable = new HashTable()
-  //历史表(historyTable[from][to])
-  const historyTable = Array.from(Array(256)).map(() => Array.from(Array(256)).map(() => 0))
-  //杀手走法(保存两个,killerMove[depth][0],killerMove[depth][1])
-  const killerMove = []
+let hashTable = new HashTable()
+let historyTable = Array.from(Array(256)).map(() => Array.from(Array(256)).map(() => 0))
+let killerMove = []
+let isFinished = true
+let bestMove = null
+let searchDepth = 1
 
-  //对走法进行排序
-  const sortingMoves = (hashMv, ply) => (move1, move2) => {
-    //置换表排序
-    if (move1 === hashMv) {
-      return -1
-    } else if (move2 === hashMv) {
-      return 1
-    }
-    else {
-      //按杀手1排序
-      if (killerMove[ply]) {
-        if (killerMove[ply][0] && killerMove[ply][0].equal(move1)) {
-          return -1
-        } else if (killerMove[ply][0] && killerMove[ply][0].equal(move2)) {
-          return 1
-        }
+//重置整个搜索
+function initial() {
+  hashTable = new HashTable()
+  historyTable = Array.from(Array(256)).map(() => Array.from(Array(256)).map(() => 0))
+  killerMove = []
+  isFinished = true
+  searchDepth = 20
+}
 
-        //按杀手2排序
-        if (killerMove[ply][1] && killerMove[ply][1].equal(move1)) {
-          return -1
-        } else if (killerMove[ply][1] && killerMove[ply][1].equal(move2)) {
-          return 1
-        }
-      }
-
-      //mvv/lva排序吃子走法
-      if (move1.wvl != null && move2.wvl != null) {
-        return move1.wvl - move2.wvl > 0 ? -1 : 1
-      } else if (move1.wvl != null && move2.wvl == null) {
+//对走法进行排序
+const sortingMoves = (hashMv, ply) => (move1, move2) => {
+  //1. 置换表排序
+  if (move1 === hashMv) {
+    return -1
+  } else if (move2 === hashMv) {
+    return 1
+  }
+  else {
+    //2. 按杀手排序
+    if (killerMove[ply]) {
+      //2.1 按杀手1排序
+      if (killerMove[ply][0] && killerMove[ply][0].equal(move1)) {
         return -1
-      } else if (move2.wvl != null && move1.wvl == null) {
+      } else if (killerMove[ply][0] && killerMove[ply][0].equal(move2)) {
         return 1
       }
 
-      //历史表排序不吃子走法
-      else {
-        return historyTable[move1.to][move1.from] - historyTable[move2.to][move2.from] > 0 ? -1 : 1
+      //2.2 按杀手2排序
+      if (killerMove[ply][1] && killerMove[ply][1].equal(move1)) {
+        return -1
+      } else if (killerMove[ply][1] && killerMove[ply][1].equal(move2)) {
+        return 1
       }
     }
+
+    //3.按mvv/lva排序吃子走法
+    if (move1.wvl != null && move2.wvl != null) {
+      return move1.wvl - move2.wvl > 0 ? -1 : 1
+    } else if (move1.wvl != null && move2.wvl == null) {
+      return -1
+    } else if (move2.wvl != null && move1.wvl == null) {
+      return 1
+    }
+
+    //4.按历史表排序不吃子走法
+    else {
+      return historyTable[move1.to][move1.from] - historyTable[move2.to][move2.from] > 0 ? -1 : 1
+    }
   }
+}
 
-  //保存历史表走法，depth是向下的层数，ply是向上的层数
-  function saveGoodMove(mv, depth, ply) {
-    historyTable[mv.from][mv.to] += depth
+//保存历史表走法，depth是向下的层数，ply是向上的层数
+function saveGoodMove(mv, depth, ply) {
+  historyTable[mv.from][mv.to] += depth
 
-    //防止溢出
-    if (historyTable[mv.from][mv.to] > 240) {
-      historyTable.forEach((row, from) => {
-        row.forEach((score, to) => {
-          historyTable[from][to] = score / 4
-        })
+  //防止溢出
+  if (historyTable[mv.from][mv.to] > 240) {
+    historyTable.forEach((row, from) => {
+      row.forEach((score, to) => {
+        historyTable[from][to] = score / 4
       })
-    }
+    })
+  }
 
-    if (killerMove[ply] != null) {
-      killerMove[ply] = [mv, killerMove[ply][0]]
-    } else {
-      killerMove[ply] = [mv]
+  if (killerMove[ply] != null) {
+    killerMove[ply] = [mv, killerMove[ply][0]]
+  } else {
+    killerMove[ply] = [mv]
+  }
+}
+
+//静态搜索
+function QuiescentSearch(pos, alpha, beta) {
+  return pos.evaluate()
+}
+
+function PVS(pos, finishTime, alpha = -Infinity, beta = Infinity, depth) {
+  //0. 判断是否超时
+  if (Date.now() > finishTime) {
+    isFinished = false
+    return timeoutValue
+  }
+
+  //1. 查看当前局面是否重复了
+  // const repValue = pos.repValue()
+  // if (repValue) {
+  //   return repValue
+  // }
+
+  //获得pos的zobrist值和当前已经走过的步数
+  const zobrist = pos.zobrist
+  const ply = pos.moveStack.length
+
+  //2. 查看置换表里是否已经有走法了
+  const hashScore = hashTable.readHashTable(zobrist, depth, alpha, beta, ply)
+  let hashMv
+
+  if (hashScore != null) {
+    //2.1 找到了可用的得分
+
+    if (typeof hashScore === 'number') {
+      return hashScore
+    }
+    //2.2 找到了可用的置换表走法
+    else if (hashScore instanceof Move) {
+      hashMv = hashScore
     }
   }
 
-  let isFinished = true
 
-  function PVS(pos, maxDepth, initialAlpha = -Infinity, initialBeta = Infinity) {
-    let resultMove = null
-    let resultZobrist = null
+  //3. 查看是否到达水平线,小于0是因为空步可能导致深度小于0
+  if (depth <= 0) {
+    const eval = QuiescentSearch(pos, alpha, beta)
+    hashTable.saveHashTable(zobrist, eval, depth, hashExact, null, ply)
+    return eval
+  }
 
-    function QuiescentSearch(alpha, beta) {
-      //超过了时间
-      if (Date.now() > finishTime) {
-        isFinished = false
-        return timeoutValue
+  //4. 根据置换表，杀手走法，历史表排序走法
+  const moves = pos.generateMoves().sort(sortingMoves(hashMv, ply))
+
+  //5. 按顺序进行pvs-alpha-beta算法
+  let pvFlag = 0
+  let bestScore = -Infinity
+  let bestMove = null
+  for (let move of moves) {
+    //如果这个走法是合法的(不会将死自己)
+    if (pos.makeMove(move)) {
+      let score
+      //若是第一个走法，走普通的pvs算法
+      if (!pvFlag) {
+        score = -PVS(pos, finishTime, -beta, -alpha, depth - 1)
+        pvFlag = 1
       }
+      //若已经走过至少一个走法，走限制边界的pvs算法
+      else {
+        //预测下一个走法要么超过beta产生截断，要么比bestScore要差
+        score = -PVS(pos, finishTime, -(bestScore + 1), -bestScore, depth - 1)
 
-      if (pos.isCheck()) {
-        return pvsAlphabeta(alpha, beta, 1)
-      }
-
-      const zobrist = pos.zobrist
-
-      let eval = pos.evaluate()
-
-      if (eval >= beta) {
-        return eval
-      }
-      if (eval > alpha) {
-        alpha = eval
-      }
-
-      let unMoveFlag = 1
-
-      for (let move of pos.generateMoves(true)) {
-        if (pos.makeMove(move)) {
-          //至少走了一步
-          unMoveFlag = 0
-          const score = -QuiescentSearch(-beta, -alpha)
-          pos.unMakeMove()
-
-          if (score >= beta) {
-            return score
-          }
-          if (score > alpha) {
-            alpha = score
-          }
+        //若预测失败，这个走法可能是一个好的走法，那么重新搜索pvs得分
+        if (score > bestScore && score < beta) {
+          score = -PVS(pos, finishTime, -beta, -alpha, depth - 1)
         }
       }
+      pos.unMakeMove()
 
-      if (unMoveFlag) {
-        return -checkmatedValue
+      //产生beta截断
+      if (score >= beta) {
+        //如果不是因为重复局面而返回值的话
+        if (!pos.isRepValue(score)) {
+          //保存得分到置换表里
+          hashTable.saveHashTable(zobrist, score, depth, hashBeta, move, ply)
+          //保存走法到历史表里
+          saveGoodMove(move, depth, ply)
+        }
+        return score
       }
 
-      return alpha
+      if (score > bestScore) {
+        bestMove = move
+        //更新最好的得分
+        bestScore = score
+        //更新alpha值
+        if (score > alpha) {
+          alpha = score
+        }
+      }
     }
+  }
 
-    function pvsAlphabeta(alpha, beta, depth) {
-      if (Date.now() > finishTime) {
-        isFinished = false
-        return timeoutValue
+  //6. 判断得分
+
+  //6.1 搜完了整棵树
+  if(searchDepth === depth){
+    return bestMove
+  }
+
+  //6.2 一步都没走,被将死了
+  if (!pvFlag) {
+    //尽量挣扎的久一点(笑)
+    const score = ply - checkmatedValue
+    //保存得分
+    hashTable.saveHashTable(zobrist, score, depth, hashExact, null, ply)
+    return score
+  }
+  //6.3 有走法
+  else {
+    //6.3.1走法是准确值，超过了初始alpha
+    if (bestScore === alpha) {
+      //如果不是因为重复局面而返回的话
+      if (!pos.repValue(bestScore)) {
+        hashTable.saveHashTable(zobrist, bestScore, depth, hashExact, bestMove, ply)
       }
-
-      // //是否发生重复
-      // const repScore = pos.repValue(pos.repStatus())
-      // if (repScore) {
-      //   return repScore
-      // }
-
-      const zobrist = pos.zobrist
-      const ply = pos.moveStack.length
-
-      //生成置换表裁剪
-      const previousScore = hashTable.readHashTable(zobrist, depth, alpha, beta, pos.moveStack.length)
-      if (typeof previousScore === 'number') {
-        return previousScore
-      }
-      const lastGoodMv = previousScore
-
-      //到达水平线，采用静态搜索
-      if (depth <= 0) {
-        const eval = QuiescentSearch(alpha, beta)
-        // const eval = pos.evaluate()
-        hashTable.saveHashTable(zobrist, eval, depth, hashExact, null)
-        return eval
-      }
-
-      let bestScore = -Infinity
-
-      let bestMove = null
-      //是否有更新alpha
-      let alphaFlag = 0
-      //是否一步也没走
-      let unMoveFlag = 1
-
-      const moves = pos.generateMoves().sort(sortingMoves(lastGoodMv, pos.moveStack.length))
-
-      //至少要走完一步棋
-      let pvFlag = false
-
-      for (let move of moves) {
-        if (pos.makeMove(move)) {
-          //走了一步
-          unMoveFlag = 0
-
-          let score
-          if (pvFlag) {
-            score = -pvsAlphabeta(-alpha - 1, -alpha, depth - 1)
-            if (score > alpha && score < beta) {
-              score = -pvsAlphabeta(-beta, -alpha, depth - 1)
-            }
-          } else {
-            score = -pvsAlphabeta(-beta, -alpha, depth - 1)
-          }
-          pos.unMakeMove()
-
-          if (score >= beta) {
-            saveGoodMove(move, depth, pos.moveStack.length)
-            hashTable.saveHashTable(zobrist, score, depth, hashBeta, bestMove)
-            return score
-          }
-
-          if (score > bestScore) {
-            bestMove = move
-            bestScore = score
-          }
-
-          if (score > alpha) {
-            pvFlag = true
-            alphaFlag = 1
-            alpha = score
-          }
-        }
-      }
-
-      //到达了根节点
-      if (depth === maxDepth) {
-        resultZobrist = zobrist
-        resultMove = bestMove
-      }
-
-      //没有走任何棋
-      if (unMoveFlag) {
-        hashTable.saveHashTable(zobrist, pos.moveStack.length - checkmatedValue, depth, hashExact, null, pos.moveStack.length)
-        return pos.moveStack.length - checkmatedValue
-      } else {
-        //是否低于alpha边界
-        if (alphaFlag === 0) {
-          hashTable.saveHashTable(zobrist, bestScore, depth, hashAlpha, bestMove)
-        } else {
-          saveGoodMove(bestMove, depth, pos.moveStack.length)
-          hashTable.saveHashTable(zobrist, alpha, depth, hashExact, bestMove)
-        }
-      }
-
       return bestScore
     }
-
-    pvsAlphabeta(initialAlpha, initialBeta, maxDepth)
-
-    return resultMove
+    //6.3.2走法不好，比初始alpha还差
+    else {
+      //如果不是因为重复局面而返回的话
+      if (!pos.repValue(bestScore)) {
+        hashTable.saveHashTable(zobrist, bestScore, depth, hashAlpha, bestMove, ply)
+      }
+      return bestScore
+    }
   }
+}
 
-  let resultMove
+function ComputerThinkTimer(pos, remainTime = timeout, maxDepth = 20) {
+  initial()
 
+  const finishTime = Date.now() + timeout
+  let bestMove = null
   for (let i = 1; i <= maxDepth; i++) {
-    const bestMove = PVS(pos, i)
-    if (isFinished && bestMove) {
-      console.log(i)
-      resultMove = bestMove
+
+    searchDepth = i
+    const resultMove = PVS(pos, finishTime, -Infinity, Infinity, i)
+
+    if (resultMove && isFinished) {
+      bestMove = resultMove
     }
 
     if (Date.now() > finishTime) {
       break
     }
   }
-
-  return resultMove
+  return bestMove
 }
+
+searchDepth = 4
+console.log(PVS(new Pos(), Date.now()+10000000000000000, -Infinity, Infinity, 4))
 
 module.exports = {
   ComputerThinkTimer,
@@ -298,6 +284,249 @@ module.exports = {
   checkmatedValue
 }
 
+
+// function ComputerThinkTimer(pos, remainTime = timeout, maxDepth = 20) {
+//   const finishTime = Date.now() + remainTime
+//   //置换表
+//   const hashTable = new HashTable()
+//   //历史表(historyTable[from][to])
+//   const historyTable = Array.from(Array(256)).map(() => Array.from(Array(256)).map(() => 0))
+//   //杀手走法(保存两个,killerMove[depth][0],killerMove[depth][1])
+//   const killerMove = []
+
+//   //对走法进行排序
+//   const sortingMoves = (hashMv, ply) => (move1, move2) => {
+//     //置换表排序
+//     if (move1 === hashMv) {
+//       return -1
+//     } else if (move2 === hashMv) {
+//       return 1
+//     }
+//     else {
+//       //按杀手1排序
+//       if (killerMove[ply]) {
+//         if (killerMove[ply][0] && killerMove[ply][0].equal(move1)) {
+//           return -1
+//         } else if (killerMove[ply][0] && killerMove[ply][0].equal(move2)) {
+//           return 1
+//         }
+
+//         //按杀手2排序
+//         if (killerMove[ply][1] && killerMove[ply][1].equal(move1)) {
+//           return -1
+//         } else if (killerMove[ply][1] && killerMove[ply][1].equal(move2)) {
+//           return 1
+//         }
+//       }
+
+//       //mvv/lva排序吃子走法
+//       if (move1.wvl != null && move2.wvl != null) {
+//         return move1.wvl - move2.wvl > 0 ? -1 : 1
+//       } else if (move1.wvl != null && move2.wvl == null) {
+//         return -1
+//       } else if (move2.wvl != null && move1.wvl == null) {
+//         return 1
+//       }
+
+//       //历史表排序不吃子走法
+//       else {
+//         return historyTable[move1.to][move1.from] - historyTable[move2.to][move2.from] > 0 ? -1 : 1
+//       }
+//     }
+//   }
+
+//   //保存历史表走法，depth是向下的层数，ply是向上的层数
+//   function saveGoodMove(mv, depth, ply) {
+//     historyTable[mv.from][mv.to] += depth
+
+//     //防止溢出
+//     if (historyTable[mv.from][mv.to] > 240) {
+//       historyTable.forEach((row, from) => {
+//         row.forEach((score, to) => {
+//           historyTable[from][to] = score / 4
+//         })
+//       })
+//     }
+
+//     if (killerMove[ply] != null) {
+//       killerMove[ply] = [mv, killerMove[ply][0]]
+//     } else {
+//       killerMove[ply] = [mv]
+//     }
+//   }
+
+//   let isFinished = true
+
+//   function PVS(pos, maxDepth, initialAlpha = -Infinity, initialBeta = Infinity) {
+//     function QuiescentSearch(alpha, beta) {
+//       //超过了时间
+//       if (Date.now() > finishTime) {
+//         isFinished = false
+//         return timeoutValue
+//       }
+
+//       if (pos.isChecking()) {
+//         return pvsAlphabeta(alpha, beta, 1)
+//       }
+
+//       const zobrist = pos.zobrist
+
+//       let eval = pos.evaluate()
+
+//       if (eval >= beta) {
+//         return eval
+//       }
+//       if (eval > alpha) {
+//         alpha = eval
+//       }
+
+//       let unMoveFlag = 1
+
+//       for (let move of pos.generateMoves(true)) {
+//         if (pos.makeMove(move)) {
+//           //至少走了一步
+//           unMoveFlag = 0
+//           const score = -QuiescentSearch(-beta, -alpha)
+//           pos.unMakeMove()
+
+//           if (score >= beta) {
+//             return score
+//           }
+//           if (score > alpha) {
+//             alpha = score
+//           }
+//         }
+//       }
+
+//       if (unMoveFlag) {
+//         return pos.moveStack.length - checkmatedValue
+//       }
+
+//       return alpha
+//     }
+
+//     function pvsAlphabeta(alpha, beta, depth) {
+//       if (Date.now() > finishTime) {
+//         isFinished = false
+//         return timeoutValue
+//       }
+
+//       //是否发生重复
+//       const repScore = pos.repValue(pos.repStatus())
+//       if (repScore) {
+//         return repScore
+//       }
+
+//       const zobrist = pos.zobrist
+//       const ply = pos.moveStack.length
+
+//       //生成置换表裁剪
+//       const previousScore = hashTable.readHashTable(zobrist, depth, alpha, beta, pos.moveStack.length)
+//       if (typeof previousScore === 'number') {
+//         return previousScore
+//       }
+//       const lastGoodMv = null
+
+//       //到达水平线，采用静态搜索  
+//       if (depth <= 0) {
+//         // const eval = QuiescentSearch(alpha, beta)
+//         const eval = pos.evaluate()
+//         hashTable.saveHashTable(zobrist, eval, depth, hashExact, null, pos.moveStack.length)
+//         return eval
+//       }
+
+//       let bestScore = -Infinity
+
+//       let bestMove = null
+//       //是否有更新alpha
+//       let alphaFlag = 0
+//       //是否一步也没走
+//       let unMoveFlag = 1
+
+//       const moves = pos.generateMoves().sort(sortingMoves(lastGoodMv, pos.moveStack.length))
+
+//       //至少要走完一步棋
+//       let pvFlag = false
+
+//       for (let move of moves) {
+//         if (pos.makeMove(move)) {
+//           //走了一步
+//           unMoveFlag = 0
+
+//           let score
+//           if (pvFlag) {
+//             score = -pvsAlphabeta(-alpha - 1, -alpha, depth - 1)
+//             if (score > alpha && score < beta) {
+//               score = -pvsAlphabeta(-beta, -alpha, depth - 1)
+//             }
+//           } else {
+//             score = -pvsAlphabeta(-beta, -alpha, depth - 1)
+//           }
+//           pos.unMakeMove()
+
+//           if (score >= beta) {
+//             saveGoodMove(move, depth, pos.moveStack.length)
+//             hashTable.saveHashTable(zobrist, score, depth, hashBeta, bestMove)
+//             return score
+//           }
+
+//           if (score > bestScore) {
+//             bestMove = move
+//             bestScore = score
+//           }
+
+//           if (score > alpha) {
+//             pvFlag = true
+//             alphaFlag = 1
+//             alpha = score
+//           }
+//         }
+//       }
+
+//       //到达了根节点
+//       if (depth === maxDepth) {
+//         resultZobrist = zobrist
+//         resultMove = bestMove
+//       }
+
+//       //没有走任何棋
+//       if (unMoveFlag) {
+//         hashTable.saveHashTable(zobrist, pos.moveStack.length - checkmatedValue, depth, hashExact, null, pos.moveStack.length)
+//         return pos.moveStack.length - checkmatedValue
+//       } else {
+//         //是否低于alpha边界
+//         if (alphaFlag === 0) {
+//           hashTable.saveHashTable(zobrist, bestScore, depth, hashAlpha, bestMove)
+//         } else {
+//           saveGoodMove(bestMove, depth, pos.moveStack.length)
+//           hashTable.saveHashTable(zobrist, alpha, depth, hashExact, bestMove)
+//         }
+//       }
+
+//       return bestScore
+//     }
+
+//     pvsAlphabeta(initialAlpha, initialBeta, maxDepth)
+
+//     return resultMove
+//   }
+
+//   let resultMove
+
+//   for (let i = 1; i <= maxDepth; i++) {
+//     const bestMove = PVS(pos, i)
+//     if (isFinished && bestMove) {
+//       console.log(i)
+//       resultMove = bestMove
+//     }
+
+//     if (Date.now() > finishTime) {
+//       break
+//     }
+//   }
+
+//   return resultMove
+// }
 
 // //空着裁剪减少两层
 // const nullDepth = 2

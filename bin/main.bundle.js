@@ -72,9 +72,9 @@
 
 
 	class Game extends Pos {
-	  constructor(fen = 'rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w') {
-	    super(fen)
-	    this.fenStack = [this.toFen()]
+	  constructor(fen = 'rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w', moveStack = []) {
+	    super(fen, moveStack)
+	    this.intialFen = fen
 	  }
 
 	  //返回一个move
@@ -82,37 +82,21 @@
 	    return search(this.pos())
 	  }
 
+	  record() {
+	    return [this.intialFen, ...this.moveStack]
+	  }
+
+	  restore(fen, moveStack) {
+	    return new Game(fen, moveStack)
+	  }
+
 	  pos() {
-	    const pos = new Pos(this.toFen())
-	    pos.zobristStack = this.zobristStack.map(_ => _)
-	    pos.checkStack = this.checkStack.map(_ => _)
-	    pos.moveStack = this.moveStack.map(_ => _)
+	    const pos = new Pos(this.intialFen, this.moveStack)
 	    return pos
-	  }
-
-	  makeMove(move) {
-	    super.makeMove(move)
-	    this.fenStack.push(this.toFen())
-	  }
-
-	  unMakeMove() {
-	    super.unMakeMove()
-	    this.fenStack.pop()
-	  }
-
-	  getLegalMove(from, to) {
-	    return this.generateMoves().find((move) => move.from === from && move.to === to)
 	  }
 
 	  isCheckmated() {
 	    return MinMax(this.pos()) == null
-	  }
-
-	  isChecking() {
-	    this.makeEmptyMove()
-	    const isChecking = this.isCheck()
-	    this.unMakeEmptyMove()
-	    return isChecking
 	  }
 	}
 
@@ -545,7 +529,7 @@
 
 	function search(pos) {
 	  const start = Date.now()
-	  const resultMove = ComputerThinkTimer(pos,100)
+	  const resultMove = ComputerThinkTimer(pos,1000)
 	  const end = Date.now()
 
 	  console.log("time consume: " + (end - start))
@@ -570,20 +554,16 @@
 	const Pos = __webpack_require__(8)
 	const { checkmatedValue, winValue, banValue, drawValue } = __webpack_require__(10)
 	const { HashTable, hashAlpha, hashBeta, hashExact } = __webpack_require__(11)
+	const { Move } = __webpack_require__(9)
 
 	const timeout = 5 * 1000
 	const timeoutValue = 300000
 
+	//用于判断是否将死
 	function MinMax(pos, maxDepth = 1) {
 	  let resultMove = null
 
 	  const score = (function helper(depth) {
-	    //是否发生重复
-	    const repScore = pos.repValue(pos.repStatus())
-	    if (repScore) {
-	      return repScore
-	    }
-
 	    if (depth === 0) {
 	      return pos.evaluate()
 	    }
@@ -615,251 +595,241 @@
 	  return resultMove
 	}
 
-	function ComputerThinkTimer(pos, remainTime = timeout, maxDepth = 20) {
-	  const finishTime = Date.now() + remainTime
-	  //置换表
-	  const hashTable = new HashTable()
-	  //历史表(historyTable[from][to])
-	  const historyTable = Array.from(Array(256)).map(() => Array.from(Array(256)).map(() => 0))
-	  //杀手走法(保存两个,killerMove[depth][0],killerMove[depth][1])
-	  const killerMove = []
+	let hashTable = new HashTable()
+	let historyTable = Array.from(Array(256)).map(() => Array.from(Array(256)).map(() => 0))
+	let killerMove = []
+	let isFinished = true
+	let bestMove = null
+	let searchDepth = 1
 
-	  //对走法进行排序
-	  const sortingMoves = (hashMv, ply) => (move1, move2) => {
-	    //置换表排序
-	    if (move1 === hashMv) {
-	      return -1
-	    } else if (move2 === hashMv) {
-	      return 1
-	    }
-	    else {
-	      //按杀手1排序
-	      if (killerMove[ply]) {
-	        if (killerMove[ply][0] && killerMove[ply][0].equal(move1)) {
-	          return -1
-	        } else if (killerMove[ply][0] && killerMove[ply][0].equal(move2)) {
-	          return 1
-	        }
+	//重置整个搜索
+	function initial() {
+	  hashTable = new HashTable()
+	  historyTable = Array.from(Array(256)).map(() => Array.from(Array(256)).map(() => 0))
+	  killerMove = []
+	  isFinished = true
+	  searchDepth = 20
+	}
 
-	        //按杀手2排序
-	        if (killerMove[ply][1] && killerMove[ply][1].equal(move1)) {
-	          return -1
-	        } else if (killerMove[ply][1] && killerMove[ply][1].equal(move2)) {
-	          return 1
-	        }
-	      }
-
-	      //mvv/lva排序吃子走法
-	      if (move1.wvl != null && move2.wvl != null) {
-	        return move1.wvl - move2.wvl > 0 ? -1 : 1
-	      } else if (move1.wvl != null && move2.wvl == null) {
+	//对走法进行排序
+	const sortingMoves = (hashMv, ply) => (move1, move2) => {
+	  //1. 置换表排序
+	  if (move1 === hashMv) {
+	    return -1
+	  } else if (move2 === hashMv) {
+	    return 1
+	  }
+	  else {
+	    //2. 按杀手排序
+	    if (killerMove[ply]) {
+	      //2.1 按杀手1排序
+	      if (killerMove[ply][0] && killerMove[ply][0].equal(move1)) {
 	        return -1
-	      } else if (move2.wvl != null && move1.wvl == null) {
+	      } else if (killerMove[ply][0] && killerMove[ply][0].equal(move2)) {
 	        return 1
 	      }
 
-	      //历史表排序不吃子走法
-	      else {
-	        return historyTable[move1.to][move1.from] - historyTable[move2.to][move2.from] > 0 ? -1 : 1
+	      //2.2 按杀手2排序
+	      if (killerMove[ply][1] && killerMove[ply][1].equal(move1)) {
+	        return -1
+	      } else if (killerMove[ply][1] && killerMove[ply][1].equal(move2)) {
+	        return 1
 	      }
 	    }
+
+	    //3.按mvv/lva排序吃子走法
+	    if (move1.wvl != null && move2.wvl != null) {
+	      return move1.wvl - move2.wvl > 0 ? -1 : 1
+	    } else if (move1.wvl != null && move2.wvl == null) {
+	      return -1
+	    } else if (move2.wvl != null && move1.wvl == null) {
+	      return 1
+	    }
+
+	    //4.按历史表排序不吃子走法
+	    else {
+	      return historyTable[move1.to][move1.from] - historyTable[move2.to][move2.from] > 0 ? -1 : 1
+	    }
 	  }
+	}
 
-	  //保存历史表走法，depth是向下的层数，ply是向上的层数
-	  function saveGoodMove(mv, depth, ply) {
-	    historyTable[mv.from][mv.to] += depth
+	//保存历史表走法，depth是向下的层数，ply是向上的层数
+	function saveGoodMove(mv, depth, ply) {
+	  historyTable[mv.from][mv.to] += depth
 
-	    //防止溢出
-	    if (historyTable[mv.from][mv.to] > 240) {
-	      historyTable.forEach((row, from) => {
-	        row.forEach((score, to) => {
-	          historyTable[from][to] = score / 4
-	        })
+	  //防止溢出
+	  if (historyTable[mv.from][mv.to] > 240) {
+	    historyTable.forEach((row, from) => {
+	      row.forEach((score, to) => {
+	        historyTable[from][to] = score / 4
 	      })
-	    }
+	    })
+	  }
 
-	    if (killerMove[ply] != null) {
-	      killerMove[ply] = [mv, killerMove[ply][0]]
-	    } else {
-	      killerMove[ply] = [mv]
+	  if (killerMove[ply] != null) {
+	    killerMove[ply] = [mv, killerMove[ply][0]]
+	  } else {
+	    killerMove[ply] = [mv]
+	  }
+	}
+
+	//静态搜索
+	function QuiescentSearch(pos, alpha, beta) {
+	  return pos.evaluate()
+	}
+
+	function PVS(pos, finishTime, alpha = -Infinity, beta = Infinity, depth) {
+	  //0. 判断是否超时
+	  if (Date.now() > finishTime) {
+	    isFinished = false
+	    return timeoutValue
+	  }
+
+	  //1. 查看当前局面是否重复了
+	  // const repValue = pos.repValue()
+	  // if (repValue) {
+	  //   return repValue
+	  // }
+
+	  //获得pos的zobrist值和当前已经走过的步数
+	  const zobrist = pos.zobrist
+	  const ply = pos.moveStack.length
+
+	  //2. 查看置换表里是否已经有走法了
+	  const hashScore = hashTable.readHashTable(zobrist, depth, alpha, beta, ply)
+	  let hashMv
+
+	  if (hashScore != null) {
+	    //2.1 找到了可用的得分
+
+	    if (typeof hashScore === 'number') {
+	      return hashScore
+	    }
+	    //2.2 找到了可用的置换表走法
+	    else if (hashScore instanceof Move) {
+	      hashMv = hashScore
 	    }
 	  }
 
-	  let isFinished = true
 
-	  function PVS(pos, maxDepth, initialAlpha = -Infinity, initialBeta = Infinity) {
-	    let resultMove = null
-	    let resultZobrist = null
+	  //3. 查看是否到达水平线,小于0是因为空步可能导致深度小于0
+	  if (depth <= 0) {
+	    const eval = QuiescentSearch(pos, alpha, beta)
+	    hashTable.saveHashTable(zobrist, eval, depth, hashExact, null, ply)
+	    return eval
+	  }
 
-	    function QuiescentSearch(alpha, beta) {
-	      //超过了时间
-	      if (Date.now() > finishTime) {
-	        isFinished = false
-	        return timeoutValue
+	  //4. 根据置换表，杀手走法，历史表排序走法
+	  const moves = pos.generateMoves().sort(sortingMoves(hashMv, ply))
+
+	  //5. 按顺序进行pvs-alpha-beta算法
+	  let pvFlag = 0
+	  let bestScore = -Infinity
+	  let bestMove = null
+	  for (let move of moves) {
+	    //如果这个走法是合法的(不会将死自己)
+	    if (pos.makeMove(move)) {
+	      let score
+	      //若是第一个走法，走普通的pvs算法
+	      if (!pvFlag) {
+	        score = -PVS(pos, finishTime, -beta, -alpha, depth - 1)
+	        pvFlag = 1
 	      }
+	      //若已经走过至少一个走法，走限制边界的pvs算法
+	      else {
+	        //预测下一个走法要么超过beta产生截断，要么比bestScore要差
+	        score = -PVS(pos, finishTime, -(bestScore + 1), -bestScore, depth - 1)
 
-	      if (pos.isCheck()) {
-	        return pvsAlphabeta(alpha, beta, 1)
-	      }
-
-	      const zobrist = pos.zobrist
-
-	      let eval = pos.evaluate()
-
-	      if (eval >= beta) {
-	        return eval
-	      }
-	      if (eval > alpha) {
-	        alpha = eval
-	      }
-
-	      let unMoveFlag = 1
-
-	      for (let move of pos.generateMoves(true)) {
-	        if (pos.makeMove(move)) {
-	          //至少走了一步
-	          unMoveFlag = 0
-	          const score = -QuiescentSearch(-beta, -alpha)
-	          pos.unMakeMove()
-
-	          if (score >= beta) {
-	            return score
-	          }
-	          if (score > alpha) {
-	            alpha = score
-	          }
+	        //若预测失败，这个走法可能是一个好的走法，那么重新搜索pvs得分
+	        if (score > bestScore && score < beta) {
+	          score = -PVS(pos, finishTime, -beta, -alpha, depth - 1)
 	        }
 	      }
+	      pos.unMakeMove()
 
-	      if (unMoveFlag) {
-	        return -checkmatedValue
+	      //产生beta截断
+	      if (score >= beta) {
+	        //如果不是因为重复局面而返回值的话
+	        if (!pos.isRepValue(score)) {
+	          //保存得分到置换表里
+	          hashTable.saveHashTable(zobrist, score, depth, hashBeta, move, ply)
+	          //保存走法到历史表里
+	          saveGoodMove(move, depth, ply)
+	        }
+	        return score
 	      }
 
-	      return alpha
+	      if (score > bestScore) {
+	        bestMove = move
+	        //更新最好的得分
+	        bestScore = score
+	        //更新alpha值
+	        if (score > alpha) {
+	          alpha = score
+	        }
+	      }
 	    }
+	  }
 
-	    function pvsAlphabeta(alpha, beta, depth) {
-	      if (Date.now() > finishTime) {
-	        isFinished = false
-	        return timeoutValue
+	  //6. 判断得分
+
+	  //6.1 搜完了整棵树
+	  if(searchDepth === depth){
+	    return bestMove
+	  }
+
+	  //6.2 一步都没走,被将死了
+	  if (!pvFlag) {
+	    //尽量挣扎的久一点(笑)
+	    const score = ply - checkmatedValue
+	    //保存得分
+	    hashTable.saveHashTable(zobrist, score, depth, hashExact, null, ply)
+	    return score
+	  }
+	  //6.3 有走法
+	  else {
+	    //6.3.1走法是准确值，超过了初始alpha
+	    if (bestScore === alpha) {
+	      //如果不是因为重复局面而返回的话
+	      if (!pos.repValue(bestScore)) {
+	        hashTable.saveHashTable(zobrist, bestScore, depth, hashExact, bestMove, ply)
 	      }
-
-	      // //是否发生重复
-	      // const repScore = pos.repValue(pos.repStatus())
-	      // if (repScore) {
-	      //   return repScore
-	      // }
-
-	      const zobrist = pos.zobrist
-	      const ply = pos.moveStack.length
-
-	      //生成置换表裁剪
-	      const previousScore = hashTable.readHashTable(zobrist, depth, alpha, beta, pos.moveStack.length)
-	      if (typeof previousScore === 'number') {
-	        return previousScore
-	      }
-	      const lastGoodMv = previousScore
-
-	      //到达水平线，采用静态搜索
-	      if (depth <= 0) {
-	        const eval = QuiescentSearch(alpha, beta)
-	        // const eval = pos.evaluate()
-	        hashTable.saveHashTable(zobrist, eval, depth, hashExact, null)
-	        return eval
-	      }
-
-	      let bestScore = -Infinity
-
-	      let bestMove = null
-	      //是否有更新alpha
-	      let alphaFlag = 0
-	      //是否一步也没走
-	      let unMoveFlag = 1
-
-	      const moves = pos.generateMoves().sort(sortingMoves(lastGoodMv, pos.moveStack.length))
-
-	      //至少要走完一步棋
-	      let pvFlag = false
-
-	      for (let move of moves) {
-	        if (pos.makeMove(move)) {
-	          //走了一步
-	          unMoveFlag = 0
-
-	          let score
-	          if (pvFlag) {
-	            score = -pvsAlphabeta(-alpha - 1, -alpha, depth - 1)
-	            if (score > alpha && score < beta) {
-	              score = -pvsAlphabeta(-beta, -alpha, depth - 1)
-	            }
-	          } else {
-	            score = -pvsAlphabeta(-beta, -alpha, depth - 1)
-	          }
-	          pos.unMakeMove()
-
-	          if (score >= beta) {
-	            saveGoodMove(move, depth, pos.moveStack.length)
-	            hashTable.saveHashTable(zobrist, score, depth, hashBeta, bestMove)
-	            return score
-	          }
-
-	          if (score > bestScore) {
-	            bestMove = move
-	            bestScore = score
-	          }
-
-	          if (score > alpha) {
-	            pvFlag = true
-	            alphaFlag = 1
-	            alpha = score
-	          }
-	        }
-	      }
-
-	      //到达了根节点
-	      if (depth === maxDepth) {
-	        resultZobrist = zobrist
-	        resultMove = bestMove
-	      }
-
-	      //没有走任何棋
-	      if (unMoveFlag) {
-	        hashTable.saveHashTable(zobrist, pos.moveStack.length - checkmatedValue, depth, hashExact, null, pos.moveStack.length)
-	        return pos.moveStack.length - checkmatedValue
-	      } else {
-	        //是否低于alpha边界
-	        if (alphaFlag === 0) {
-	          hashTable.saveHashTable(zobrist, bestScore, depth, hashAlpha, bestMove)
-	        } else {
-	          saveGoodMove(bestMove, depth, pos.moveStack.length)
-	          hashTable.saveHashTable(zobrist, alpha, depth, hashExact, bestMove)
-	        }
-	      }
-
 	      return bestScore
 	    }
-
-	    pvsAlphabeta(initialAlpha, initialBeta, maxDepth)
-
-	    return resultMove
+	    //6.3.2走法不好，比初始alpha还差
+	    else {
+	      //如果不是因为重复局面而返回的话
+	      if (!pos.repValue(bestScore)) {
+	        hashTable.saveHashTable(zobrist, bestScore, depth, hashAlpha, bestMove, ply)
+	      }
+	      return bestScore
+	    }
 	  }
+	}
 
-	  let resultMove
+	function ComputerThinkTimer(pos, remainTime = timeout, maxDepth = 20) {
+	  initial()
 
+	  const finishTime = Date.now() + timeout
+	  let bestMove = null
 	  for (let i = 1; i <= maxDepth; i++) {
-	    const bestMove = PVS(pos, i)
-	    if (isFinished && bestMove) {
-	      console.log(i)
-	      resultMove = bestMove
+
+	    searchDepth = i
+	    const resultMove = PVS(pos, finishTime, -Infinity, Infinity, i)
+
+	    if (resultMove && isFinished) {
+	      bestMove = resultMove
 	    }
 
 	    if (Date.now() > finishTime) {
 	      break
 	    }
 	  }
-
-	  return resultMove
+	  return bestMove
 	}
+
+	searchDepth = 4
+	console.log(PVS(new Pos(), Date.now()+10000000000000000, -Infinity, Infinity, 4))
 
 	module.exports = {
 	  ComputerThinkTimer,
@@ -867,6 +837,249 @@
 	  checkmatedValue
 	}
 
+
+	// function ComputerThinkTimer(pos, remainTime = timeout, maxDepth = 20) {
+	//   const finishTime = Date.now() + remainTime
+	//   //置换表
+	//   const hashTable = new HashTable()
+	//   //历史表(historyTable[from][to])
+	//   const historyTable = Array.from(Array(256)).map(() => Array.from(Array(256)).map(() => 0))
+	//   //杀手走法(保存两个,killerMove[depth][0],killerMove[depth][1])
+	//   const killerMove = []
+
+	//   //对走法进行排序
+	//   const sortingMoves = (hashMv, ply) => (move1, move2) => {
+	//     //置换表排序
+	//     if (move1 === hashMv) {
+	//       return -1
+	//     } else if (move2 === hashMv) {
+	//       return 1
+	//     }
+	//     else {
+	//       //按杀手1排序
+	//       if (killerMove[ply]) {
+	//         if (killerMove[ply][0] && killerMove[ply][0].equal(move1)) {
+	//           return -1
+	//         } else if (killerMove[ply][0] && killerMove[ply][0].equal(move2)) {
+	//           return 1
+	//         }
+
+	//         //按杀手2排序
+	//         if (killerMove[ply][1] && killerMove[ply][1].equal(move1)) {
+	//           return -1
+	//         } else if (killerMove[ply][1] && killerMove[ply][1].equal(move2)) {
+	//           return 1
+	//         }
+	//       }
+
+	//       //mvv/lva排序吃子走法
+	//       if (move1.wvl != null && move2.wvl != null) {
+	//         return move1.wvl - move2.wvl > 0 ? -1 : 1
+	//       } else if (move1.wvl != null && move2.wvl == null) {
+	//         return -1
+	//       } else if (move2.wvl != null && move1.wvl == null) {
+	//         return 1
+	//       }
+
+	//       //历史表排序不吃子走法
+	//       else {
+	//         return historyTable[move1.to][move1.from] - historyTable[move2.to][move2.from] > 0 ? -1 : 1
+	//       }
+	//     }
+	//   }
+
+	//   //保存历史表走法，depth是向下的层数，ply是向上的层数
+	//   function saveGoodMove(mv, depth, ply) {
+	//     historyTable[mv.from][mv.to] += depth
+
+	//     //防止溢出
+	//     if (historyTable[mv.from][mv.to] > 240) {
+	//       historyTable.forEach((row, from) => {
+	//         row.forEach((score, to) => {
+	//           historyTable[from][to] = score / 4
+	//         })
+	//       })
+	//     }
+
+	//     if (killerMove[ply] != null) {
+	//       killerMove[ply] = [mv, killerMove[ply][0]]
+	//     } else {
+	//       killerMove[ply] = [mv]
+	//     }
+	//   }
+
+	//   let isFinished = true
+
+	//   function PVS(pos, maxDepth, initialAlpha = -Infinity, initialBeta = Infinity) {
+	//     function QuiescentSearch(alpha, beta) {
+	//       //超过了时间
+	//       if (Date.now() > finishTime) {
+	//         isFinished = false
+	//         return timeoutValue
+	//       }
+
+	//       if (pos.isChecking()) {
+	//         return pvsAlphabeta(alpha, beta, 1)
+	//       }
+
+	//       const zobrist = pos.zobrist
+
+	//       let eval = pos.evaluate()
+
+	//       if (eval >= beta) {
+	//         return eval
+	//       }
+	//       if (eval > alpha) {
+	//         alpha = eval
+	//       }
+
+	//       let unMoveFlag = 1
+
+	//       for (let move of pos.generateMoves(true)) {
+	//         if (pos.makeMove(move)) {
+	//           //至少走了一步
+	//           unMoveFlag = 0
+	//           const score = -QuiescentSearch(-beta, -alpha)
+	//           pos.unMakeMove()
+
+	//           if (score >= beta) {
+	//             return score
+	//           }
+	//           if (score > alpha) {
+	//             alpha = score
+	//           }
+	//         }
+	//       }
+
+	//       if (unMoveFlag) {
+	//         return pos.moveStack.length - checkmatedValue
+	//       }
+
+	//       return alpha
+	//     }
+
+	//     function pvsAlphabeta(alpha, beta, depth) {
+	//       if (Date.now() > finishTime) {
+	//         isFinished = false
+	//         return timeoutValue
+	//       }
+
+	//       //是否发生重复
+	//       const repScore = pos.repValue(pos.repStatus())
+	//       if (repScore) {
+	//         return repScore
+	//       }
+
+	//       const zobrist = pos.zobrist
+	//       const ply = pos.moveStack.length
+
+	//       //生成置换表裁剪
+	//       const previousScore = hashTable.readHashTable(zobrist, depth, alpha, beta, pos.moveStack.length)
+	//       if (typeof previousScore === 'number') {
+	//         return previousScore
+	//       }
+	//       const lastGoodMv = null
+
+	//       //到达水平线，采用静态搜索  
+	//       if (depth <= 0) {
+	//         // const eval = QuiescentSearch(alpha, beta)
+	//         const eval = pos.evaluate()
+	//         hashTable.saveHashTable(zobrist, eval, depth, hashExact, null, pos.moveStack.length)
+	//         return eval
+	//       }
+
+	//       let bestScore = -Infinity
+
+	//       let bestMove = null
+	//       //是否有更新alpha
+	//       let alphaFlag = 0
+	//       //是否一步也没走
+	//       let unMoveFlag = 1
+
+	//       const moves = pos.generateMoves().sort(sortingMoves(lastGoodMv, pos.moveStack.length))
+
+	//       //至少要走完一步棋
+	//       let pvFlag = false
+
+	//       for (let move of moves) {
+	//         if (pos.makeMove(move)) {
+	//           //走了一步
+	//           unMoveFlag = 0
+
+	//           let score
+	//           if (pvFlag) {
+	//             score = -pvsAlphabeta(-alpha - 1, -alpha, depth - 1)
+	//             if (score > alpha && score < beta) {
+	//               score = -pvsAlphabeta(-beta, -alpha, depth - 1)
+	//             }
+	//           } else {
+	//             score = -pvsAlphabeta(-beta, -alpha, depth - 1)
+	//           }
+	//           pos.unMakeMove()
+
+	//           if (score >= beta) {
+	//             saveGoodMove(move, depth, pos.moveStack.length)
+	//             hashTable.saveHashTable(zobrist, score, depth, hashBeta, bestMove)
+	//             return score
+	//           }
+
+	//           if (score > bestScore) {
+	//             bestMove = move
+	//             bestScore = score
+	//           }
+
+	//           if (score > alpha) {
+	//             pvFlag = true
+	//             alphaFlag = 1
+	//             alpha = score
+	//           }
+	//         }
+	//       }
+
+	//       //到达了根节点
+	//       if (depth === maxDepth) {
+	//         resultZobrist = zobrist
+	//         resultMove = bestMove
+	//       }
+
+	//       //没有走任何棋
+	//       if (unMoveFlag) {
+	//         hashTable.saveHashTable(zobrist, pos.moveStack.length - checkmatedValue, depth, hashExact, null, pos.moveStack.length)
+	//         return pos.moveStack.length - checkmatedValue
+	//       } else {
+	//         //是否低于alpha边界
+	//         if (alphaFlag === 0) {
+	//           hashTable.saveHashTable(zobrist, bestScore, depth, hashAlpha, bestMove)
+	//         } else {
+	//           saveGoodMove(bestMove, depth, pos.moveStack.length)
+	//           hashTable.saveHashTable(zobrist, alpha, depth, hashExact, bestMove)
+	//         }
+	//       }
+
+	//       return bestScore
+	//     }
+
+	//     pvsAlphabeta(initialAlpha, initialBeta, maxDepth)
+
+	//     return resultMove
+	//   }
+
+	//   let resultMove
+
+	//   for (let i = 1; i <= maxDepth; i++) {
+	//     const bestMove = PVS(pos, i)
+	//     if (isFinished && bestMove) {
+	//       console.log(i)
+	//       resultMove = bestMove
+	//     }
+
+	//     if (Date.now() > finishTime) {
+	//       break
+	//     }
+	//   }
+
+	//   return resultMove
+	// }
 
 	// //空着裁剪减少两层
 	// const nullDepth = 2
@@ -1220,25 +1433,26 @@
 	const initialFen = 'rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w'
 
 	class Pos {
-	  constructor(fen) {
-	    //初始化move stack
-	    this.moveStack = []
+	  constructor(fen = initialFen, moveStack = []) {
+	    this.fenToBoard(fen)
 
-	    //初始化局面的zobrist stack
-	    this.zobristStack = []
-
-	    //初始化局面的check stack
-	    this.checkStack = []
-
-	    if (fen) {
-	      this.fenToBoard(fen)
-	    } else {
-	      this.initial()
-	    }
+	    moveStack.forEach(({ from, to }) => {
+	      const legalMove = this.getLegalMove(from, to)
+	      if (legalMove) {
+	        this.makeMove(legalMove)
+	      } else {
+	        throw new Error('非法的移动')
+	      }
+	    })
 	  }
 
-	  setToOriginal() {
-	    this.fenToBoard(initialFen)
+	  static setToOriginal() {
+	    const pos = new Pos(initialFen)
+	    return pos
+	  }
+
+	  getLegalMove(from, to) {
+	    return this.generateMoves().find((move) => move.from === from && move.to === to)
 	  }
 
 	  clearBoard() {
@@ -1246,22 +1460,6 @@
 	    this.board = Array.from(Array(256)).map(() => 0)
 	    //棋子被吃掉的为0
 	    this.piece = Array.from(Array(48)).map(() => 0)
-	    //zobrist
-	    this.zobrist = new ZobristNode()
-	    this.zobristStack = []
-	  }
-
-	  initialSide(side) {
-	    //0表示为红方回合，1是黑方
-	    this.side = side
-
-	    //代表当前回合棋子的初始下标
-	    this.sideTag = 16 + this.side * 16
-	  }
-
-	  initial() {
-	    this.clearBoard()
-	    this.initialSide(0)
 	  }
 
 	  canAttack(piecePos, sideTag) {
@@ -1366,6 +1564,10 @@
 	    }
 	  }
 
+	  isRepValue(value) {
+	    return value === banValue || value === -banValue || value === drawValue || value === -drawValue
+	  }
+
 	  repStatus() {
 	    let checkIndex = this.checkStack.length - 2
 	    let zobristIndex = this.zobristStack.length - 2
@@ -1419,6 +1621,13 @@
 	  addPiece(pos, pc) {
 	    this.board[pos] = pc
 	    this.piece[pc] = pos
+	  }
+
+	  isChecking() {
+	    this.makeEmptyMove()
+	    const isChecking = this.isCheck()
+	    this.unMakeEmptyMove()
+	    return isChecking
 	  }
 
 	  changeSide() {
@@ -1552,7 +1761,6 @@
 	    this.movePiece(move)
 	    this.changeSide()
 
-
 	    if (this.isCheck()) {
 	      this.unMakeMove()
 	      return false
@@ -1639,7 +1847,9 @@
 	      }
 	    })
 
-	    this.initialSide(fenInfo[1] === 'b' ? 1 : 0)
+	    //初始化棋盘颜色
+	    this.side = fenInfo[1] === 'b' ? 1 : 0
+	    this.sideTag = 16 + this.side * 16
 
 	    //初始化局面的zobrist
 	    this.zobrist = this.board.reduce((zobrist, piece, index) => {
@@ -1650,10 +1860,11 @@
 	      }
 	    }, new ZobristNode())
 
-	    this.zobristStack.push(this.zobrist)
+	    this.zobristStack = [this.zobrist]
 	    this.makeEmptyMove()
-	    this.checkStack.push(this.isCheck())
+	    this.checkStack = [this.isCheck()]
 	    this.unMakeEmptyMove()
+	    this.moveStack = []
 	  }
 	}
 
@@ -1858,10 +2069,15 @@
 	    this.from = from
 	    this.to = to
 	    this.capture = capture
+	    this.wvl = wvl
 	  }
 
 	  equal(move) {
 	    return this.from === move.from && this.to === move.to && this.capture === move.capture
+	  }
+
+	  toString() {
+	    return JSON.stringify({ from: this.from, to: this.to, capture: this.capture, wvl: this.wvl })
 	  }
 	}
 
@@ -3315,42 +3531,90 @@
 	const { banValue, drawValue } = __webpack_require__(10)
 	const _ = __webpack_require__(13)
 	const $ = __webpack_require__(15)
+	const toastr = __webpack_require__(16)
 
 	class ChessboardInterface {
 	  constructor(game = new Game(), playSide = 0, startWidth, startHeight, gapWidth, gapHeight) {
 	    this.coordinates = []
 	    this.chesses = []
-	    this.game = game
 	    this.playSide = playSide
 	    this.selectedChess = null
 	    this.constructChessboard(startWidth, startHeight, gapWidth, gapHeight)
 	    this.constructChesses()
-	    this.fenToBoard()
+	    this.initialGame(game)
 	    this.considerMove()
 
 	    $("#strange").click(() => {
-	      
+	      if (document.getElementById('fileName').value == '') {
+	        toastr.error('记录失败')
+	        return
+	      }
+	      fetch('/record', {
+	        method: 'post',
+	        headers: {
+	          'Accept': 'application/json',
+	          'Content-Type': 'application/json'
+	        },
+	        body: JSON.stringify({ fileName: document.getElementById('fileName').value, record: this.game.record() })
+	      })
+	        .then((response) => {
+	          toastr.success('记录成功')
+	        })
+	        .catch(() => {
+	          toastr.error('记录失败')
+	        })
 	    })
 
 	    $("#back").click(() => {
 	      if (this.game.side === this.playSide) {
 	        if (this.game.zobristStack.length >= 2) {
-	          this.game.unMakeMove()
-	          this.game.unMakeMove()
-	          this.fenToBoard()
+	          this.unMoveChess()
+	          this.unMoveChess()
 	        }
 	      } else {
 	        if (this.game.zobristStack.length >= 1) {
-	          this.game.unMakeMove()
-	          this.fenToBoard()
+	          this.unMoveChess()
 	        }
 	      }
 	    })
+
+	    $("#restore").click(() => {
+	      if (document.getElementById('restoreFileName').value == '') {
+	        toastr.error('恢复失败')
+	        return
+	      }
+	      fetch('/restore', {
+	        method: 'get',
+	        headers: {
+	          'Accept': 'application/json',
+	          'fileName': document.getElementById('restoreFileName').value
+	        }
+	      })
+	        .then((response) => {
+	          return response.json()
+	        })
+	        .then((data) => {
+	          this.initialGame(this.game.restore(data.shift(), data))
+	        })
+	        .catch((err) => {
+	          console.log(err)
+	          toastr.error('恢复失败')
+	        })
+	    })
+	  }
+
+	  initialGame(game) {
+	    this.game = game
+	    this.display()
 	  }
 
 	  considerMove() {
 	    if (this.game.isCheckmated()) {
-	      alert(`${this.game.side === this.playSide ? '你输了' : '你赢了'}`)
+	      if (this.game.side === this.playSide) {
+	        toastr.warning("你输了")
+	      } else {
+	        toastr.success("你赢了")
+	      }
 	      return
 	    }
 
@@ -3358,20 +3622,20 @@
 
 	    if (repValue === banValue) {
 	      if (this.playSide === this.game.side) {
-	        alert('你赢了')
+	        toastr.success("你赢了")
 	      } else {
-	        alert('你输了')
+	        toastr.warning("你输了")
 	      }
 	      return
 	    } else if (repValue === -banValue) {
 	      if (this.playSide === this.game.side) {
-	        alert('你输了')
+	        toastr.warning('你输了')
 	      } else {
-	        alert('你赢了')
+	        toastr.success('你赢了')
 	      }
 	      return
 	    } else if (repValue === drawValue) {
-	      alert('和棋')
+	      toastr.info('和棋')
 	      return
 	    }
 
@@ -3410,11 +3674,17 @@
 
 	  moveChess(move) {
 	    this.game.makeMove(move)
-	    this.fenToBoard()
+
+	    this.display()
 	    if (this.game.isChecking()) {
-	      alert('将军')
+	      toastr.warning('将军')
 	    }
 	    setTimeout(this.considerMove.bind(this), 500)
+	  }
+
+	  unMoveChess() {
+	    this.game.unMakeMove()
+	    this.display()
 	  }
 
 	  constructChessboard(startWidth, startHeight, gapWidth, gapHeight) {
@@ -3471,7 +3741,7 @@
 	    }
 	  }
 
-	  fenToBoard() {
+	  display() {
 	    const fen = this.game.toFen()
 
 	    const pc = {}
@@ -3506,22 +3776,18 @@
 	      }
 	    })
 
+	    this.coordinates.forEach((coordinate) => {
+	      coordinate.classList.remove('lastSelected')
+	      coordinate.classList.remove('lastSelecting')
+	      coordinate.classList.remove('selected')
+	    })
+
 	    if (this.game.moveStack.length >= 1) {
 	      const lastMove = this.game.moveStack[this.game.moveStack.length - 1]
 	      this.getCoordinate(lastMove.from).classList.add('lastSelected')
 	      this.getCoordinate(lastMove.to).classList.add('lastSelecting')
-
-	      if (this.game.moveStack.length >= 2) {
-	        const lastLastMove = this.game.moveStack[this.game.moveStack.length - 2]
-	        this.getCoordinate(lastLastMove.from).classList.remove('lastSelected')
-	        this.getCoordinate(lastLastMove.to).classList.remove('lastSelecting')
-	      }
-	    } else {
-	      this.coordinates.forEach((coordinate)=>{
-	        coordinate.classList.remove('lastSelected')
-	        coordinate.classList.remove('lastSelecting')
-	      })
 	    }
+	    this.selectedChess = null
 	  }
 	}
 
@@ -30891,6 +31157,448 @@
 
 	return jQuery;
 	} );
+
+
+/***/ },
+/* 16 */
+/***/ function(module, exports, __webpack_require__) {
+
+	var __WEBPACK_AMD_DEFINE_ARRAY__, __WEBPACK_AMD_DEFINE_RESULT__;/*
+	 * Toastr
+	 * Copyright 2012-2015
+	 * Authors: John Papa, Hans Fjällemark, and Tim Ferrell.
+	 * All Rights Reserved.
+	 * Use, reproduction, distribution, and modification of this code is subject to the terms and
+	 * conditions of the MIT license, available at http://www.opensource.org/licenses/mit-license.php
+	 *
+	 * ARIA Support: Greta Krafsig
+	 *
+	 * Project: https://github.com/CodeSeven/toastr
+	 */
+	/* global define */
+	; (function (define) {
+	    !(__WEBPACK_AMD_DEFINE_ARRAY__ = [__webpack_require__(15)], __WEBPACK_AMD_DEFINE_RESULT__ = function ($) {
+	        return (function () {
+	            var $container;
+	            var listener;
+	            var toastId = 0;
+	            var toastType = {
+	                error: 'error',
+	                info: 'info',
+	                success: 'success',
+	                warning: 'warning'
+	            };
+
+	            var toastr = {
+	                clear: clear,
+	                remove: remove,
+	                error: error,
+	                getContainer: getContainer,
+	                info: info,
+	                options: {},
+	                subscribe: subscribe,
+	                success: success,
+	                version: '2.1.2',
+	                warning: warning
+	            };
+
+	            var previousToast;
+
+	            return toastr;
+
+	            ////////////////
+
+	            function error(message, title, optionsOverride) {
+	                return notify({
+	                    type: toastType.error,
+	                    iconClass: getOptions().iconClasses.error,
+	                    message: message,
+	                    optionsOverride: optionsOverride,
+	                    title: title
+	                });
+	            }
+
+	            function getContainer(options, create) {
+	                if (!options) { options = getOptions(); }
+	                $container = $('#' + options.containerId);
+	                if ($container.length) {
+	                    return $container;
+	                }
+	                if (create) {
+	                    $container = createContainer(options);
+	                }
+	                return $container;
+	            }
+
+	            function info(message, title, optionsOverride) {
+	                return notify({
+	                    type: toastType.info,
+	                    iconClass: getOptions().iconClasses.info,
+	                    message: message,
+	                    optionsOverride: optionsOverride,
+	                    title: title
+	                });
+	            }
+
+	            function subscribe(callback) {
+	                listener = callback;
+	            }
+
+	            function success(message, title, optionsOverride) {
+	                return notify({
+	                    type: toastType.success,
+	                    iconClass: getOptions().iconClasses.success,
+	                    message: message,
+	                    optionsOverride: optionsOverride,
+	                    title: title
+	                });
+	            }
+
+	            function warning(message, title, optionsOverride) {
+	                return notify({
+	                    type: toastType.warning,
+	                    iconClass: getOptions().iconClasses.warning,
+	                    message: message,
+	                    optionsOverride: optionsOverride,
+	                    title: title
+	                });
+	            }
+
+	            function clear($toastElement, clearOptions) {
+	                var options = getOptions();
+	                if (!$container) { getContainer(options); }
+	                if (!clearToast($toastElement, options, clearOptions)) {
+	                    clearContainer(options);
+	                }
+	            }
+
+	            function remove($toastElement) {
+	                var options = getOptions();
+	                if (!$container) { getContainer(options); }
+	                if ($toastElement && $(':focus', $toastElement).length === 0) {
+	                    removeToast($toastElement);
+	                    return;
+	                }
+	                if ($container.children().length) {
+	                    $container.remove();
+	                }
+	            }
+
+	            // internal functions
+
+	            function clearContainer (options) {
+	                var toastsToClear = $container.children();
+	                for (var i = toastsToClear.length - 1; i >= 0; i--) {
+	                    clearToast($(toastsToClear[i]), options);
+	                }
+	            }
+
+	            function clearToast ($toastElement, options, clearOptions) {
+	                var force = clearOptions && clearOptions.force ? clearOptions.force : false;
+	                if ($toastElement && (force || $(':focus', $toastElement).length === 0)) {
+	                    $toastElement[options.hideMethod]({
+	                        duration: options.hideDuration,
+	                        easing: options.hideEasing,
+	                        complete: function () { removeToast($toastElement); }
+	                    });
+	                    return true;
+	                }
+	                return false;
+	            }
+
+	            function createContainer(options) {
+	                $container = $('<div/>')
+	                    .attr('id', options.containerId)
+	                    .addClass(options.positionClass)
+	                    .attr('aria-live', 'polite')
+	                    .attr('role', 'alert');
+
+	                $container.appendTo($(options.target));
+	                return $container;
+	            }
+
+	            function getDefaults() {
+	                return {
+	                    tapToDismiss: true,
+	                    toastClass: 'toast',
+	                    containerId: 'toast-container',
+	                    debug: false,
+
+	                    showMethod: 'fadeIn', //fadeIn, slideDown, and show are built into jQuery
+	                    showDuration: 300,
+	                    showEasing: 'swing', //swing and linear are built into jQuery
+	                    onShown: undefined,
+	                    hideMethod: 'fadeOut',
+	                    hideDuration: 1000,
+	                    hideEasing: 'swing',
+	                    onHidden: undefined,
+	                    closeMethod: false,
+	                    closeDuration: false,
+	                    closeEasing: false,
+
+	                    extendedTimeOut: 1000,
+	                    iconClasses: {
+	                        error: 'toast-error',
+	                        info: 'toast-info',
+	                        success: 'toast-success',
+	                        warning: 'toast-warning'
+	                    },
+	                    iconClass: 'toast-info',
+	                    positionClass: 'toast-top-right',
+	                    timeOut: 5000, // Set timeOut and extendedTimeOut to 0 to make it sticky
+	                    titleClass: 'toast-title',
+	                    messageClass: 'toast-message',
+	                    escapeHtml: false,
+	                    target: 'body',
+	                    closeHtml: '<button type="button">&times;</button>',
+	                    newestOnTop: true,
+	                    preventDuplicates: false,
+	                    progressBar: false
+	                };
+	            }
+
+	            function publish(args) {
+	                if (!listener) { return; }
+	                listener(args);
+	            }
+
+	            function notify(map) {
+	                var options = getOptions();
+	                var iconClass = map.iconClass || options.iconClass;
+
+	                if (typeof (map.optionsOverride) !== 'undefined') {
+	                    options = $.extend(options, map.optionsOverride);
+	                    iconClass = map.optionsOverride.iconClass || iconClass;
+	                }
+
+	                if (shouldExit(options, map)) { return; }
+
+	                toastId++;
+
+	                $container = getContainer(options, true);
+
+	                var intervalId = null;
+	                var $toastElement = $('<div/>');
+	                var $titleElement = $('<div/>');
+	                var $messageElement = $('<div/>');
+	                var $progressElement = $('<div/>');
+	                var $closeElement = $(options.closeHtml);
+	                var progressBar = {
+	                    intervalId: null,
+	                    hideEta: null,
+	                    maxHideTime: null
+	                };
+	                var response = {
+	                    toastId: toastId,
+	                    state: 'visible',
+	                    startTime: new Date(),
+	                    options: options,
+	                    map: map
+	                };
+
+	                personalizeToast();
+
+	                displayToast();
+
+	                handleEvents();
+
+	                publish(response);
+
+	                if (options.debug && console) {
+	                    console.log(response);
+	                }
+
+	                return $toastElement;
+
+	                function escapeHtml(source) {
+	                    if (source == null)
+	                        source = "";
+
+	                    return new String(source)
+	                        .replace(/&/g, '&amp;')
+	                        .replace(/"/g, '&quot;')
+	                        .replace(/'/g, '&#39;')
+	                        .replace(/</g, '&lt;')
+	                        .replace(/>/g, '&gt;');
+	                }
+
+	                function personalizeToast() {
+	                    setIcon();
+	                    setTitle();
+	                    setMessage();
+	                    setCloseButton();
+	                    setProgressBar();
+	                    setSequence();
+	                }
+
+	                function handleEvents() {
+	                    $toastElement.hover(stickAround, delayedHideToast);
+	                    if (!options.onclick && options.tapToDismiss) {
+	                        $toastElement.click(hideToast);
+	                    }
+
+	                    if (options.closeButton && $closeElement) {
+	                        $closeElement.click(function (event) {
+	                            if (event.stopPropagation) {
+	                                event.stopPropagation();
+	                            } else if (event.cancelBubble !== undefined && event.cancelBubble !== true) {
+	                                event.cancelBubble = true;
+	                            }
+	                            hideToast(true);
+	                        });
+	                    }
+
+	                    if (options.onclick) {
+	                        $toastElement.click(function (event) {
+	                            options.onclick(event);
+	                            hideToast();
+	                        });
+	                    }
+	                }
+
+	                function displayToast() {
+	                    $toastElement.hide();
+
+	                    $toastElement[options.showMethod](
+	                        {duration: options.showDuration, easing: options.showEasing, complete: options.onShown}
+	                    );
+
+	                    if (options.timeOut > 0) {
+	                        intervalId = setTimeout(hideToast, options.timeOut);
+	                        progressBar.maxHideTime = parseFloat(options.timeOut);
+	                        progressBar.hideEta = new Date().getTime() + progressBar.maxHideTime;
+	                        if (options.progressBar) {
+	                            progressBar.intervalId = setInterval(updateProgress, 10);
+	                        }
+	                    }
+	                }
+
+	                function setIcon() {
+	                    if (map.iconClass) {
+	                        $toastElement.addClass(options.toastClass).addClass(iconClass);
+	                    }
+	                }
+
+	                function setSequence() {
+	                    if (options.newestOnTop) {
+	                        $container.prepend($toastElement);
+	                    } else {
+	                        $container.append($toastElement);
+	                    }
+	                }
+
+	                function setTitle() {
+	                    if (map.title) {
+	                        $titleElement.append(!options.escapeHtml ? map.title : escapeHtml(map.title)).addClass(options.titleClass);
+	                        $toastElement.append($titleElement);
+	                    }
+	                }
+
+	                function setMessage() {
+	                    if (map.message) {
+	                        $messageElement.append(!options.escapeHtml ? map.message : escapeHtml(map.message)).addClass(options.messageClass);
+	                        $toastElement.append($messageElement);
+	                    }
+	                }
+
+	                function setCloseButton() {
+	                    if (options.closeButton) {
+	                        $closeElement.addClass('toast-close-button').attr('role', 'button');
+	                        $toastElement.prepend($closeElement);
+	                    }
+	                }
+
+	                function setProgressBar() {
+	                    if (options.progressBar) {
+	                        $progressElement.addClass('toast-progress');
+	                        $toastElement.prepend($progressElement);
+	                    }
+	                }
+
+	                function shouldExit(options, map) {
+	                    if (options.preventDuplicates) {
+	                        if (map.message === previousToast) {
+	                            return true;
+	                        } else {
+	                            previousToast = map.message;
+	                        }
+	                    }
+	                    return false;
+	                }
+
+	                function hideToast(override) {
+	                    var method = override && options.closeMethod !== false ? options.closeMethod : options.hideMethod;
+	                    var duration = override && options.closeDuration !== false ?
+	                        options.closeDuration : options.hideDuration;
+	                    var easing = override && options.closeEasing !== false ? options.closeEasing : options.hideEasing;
+	                    if ($(':focus', $toastElement).length && !override) {
+	                        return;
+	                    }
+	                    clearTimeout(progressBar.intervalId);
+	                    return $toastElement[method]({
+	                        duration: duration,
+	                        easing: easing,
+	                        complete: function () {
+	                            removeToast($toastElement);
+	                            if (options.onHidden && response.state !== 'hidden') {
+	                                options.onHidden();
+	                            }
+	                            response.state = 'hidden';
+	                            response.endTime = new Date();
+	                            publish(response);
+	                        }
+	                    });
+	                }
+
+	                function delayedHideToast() {
+	                    if (options.timeOut > 0 || options.extendedTimeOut > 0) {
+	                        intervalId = setTimeout(hideToast, options.extendedTimeOut);
+	                        progressBar.maxHideTime = parseFloat(options.extendedTimeOut);
+	                        progressBar.hideEta = new Date().getTime() + progressBar.maxHideTime;
+	                    }
+	                }
+
+	                function stickAround() {
+	                    clearTimeout(intervalId);
+	                    progressBar.hideEta = 0;
+	                    $toastElement.stop(true, true)[options.showMethod](
+	                        {duration: options.showDuration, easing: options.showEasing}
+	                    );
+	                }
+
+	                function updateProgress() {
+	                    var percentage = ((progressBar.hideEta - (new Date().getTime())) / progressBar.maxHideTime) * 100;
+	                    $progressElement.width(percentage + '%');
+	                }
+	            }
+
+	            function getOptions() {
+	                return $.extend({}, getDefaults(), toastr.options);
+	            }
+
+	            function removeToast($toastElement) {
+	                if (!$container) { $container = getContainer(); }
+	                if ($toastElement.is(':visible')) {
+	                    return;
+	                }
+	                $toastElement.remove();
+	                $toastElement = null;
+	                if ($container.children().length === 0) {
+	                    $container.remove();
+	                    previousToast = undefined;
+	                }
+	            }
+
+	        })();
+	    }.apply(exports, __WEBPACK_AMD_DEFINE_ARRAY__), __WEBPACK_AMD_DEFINE_RESULT__ !== undefined && (module.exports = __WEBPACK_AMD_DEFINE_RESULT__));
+	}(__webpack_require__(17)));
+
+
+/***/ },
+/* 17 */
+/***/ function(module, exports) {
+
+	module.exports = function() { throw new Error("define cannot be used indirect"); };
 
 
 /***/ }

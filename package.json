@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "mocha ./src/**/*.test.js"
+    "test": "mocha ./src/**/*.test.js",
+    "start": "nodemon ./server/index & webpack -w"
   },
   "author": "",
   "license": "ISC",
@@ -12,6 +13,11 @@
     "should": "^11.2.1"
   },
   "dependencies": {
-    "lodash": "^4.17.4"
+    "body-parser": "^1.17.2",
+    "express": "^4.15.4",
+    "jquery": "^3.2.1",
+    "lodash": "^4.17.4",
+    "moment": "^2.18.1",
+    "toastr": "^2.1.2"
   }
 }

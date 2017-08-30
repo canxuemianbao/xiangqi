@@ -191,10 +191,15 @@ exports.Move = class {
     this.from = from
     this.to = to
     this.capture = capture
+    this.wvl = wvl
   }
 
   equal(move) {
     return this.from === move.from && this.to === move.to && this.capture === move.capture
+  }
+
+  toString() {
+    return JSON.stringify({ from: this.from, to: this.to, capture: this.capture, wvl: this.wvl })
   }
 }
 

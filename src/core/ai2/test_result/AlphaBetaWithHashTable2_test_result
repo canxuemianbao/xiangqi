@@ -1,55 +1,121 @@
 开局(fen为:r1bakabr1/9/1cn3n1c/p1p1p1R1p/6p2/2P6/P3P1P1P/1C2C1N2/9/RNBAKAB2 b)
 
+depth = 1, bestMove = from 84 to 196, capture = 22
+ 花费时间为1ms 
+
+        counter      =      1
+        evalNodes    =      40
+        betaNodes    =      0
+        pvNodes      =      1
+        alphaNodes   =      0
+        hashNodes    =      0
+        deadNodes    =      0
+
+depth = 2, bestMove = from 84 to 196, capture = 22
+ 花费时间为4ms 
+
+        counter      =      41
+        evalNodes    =      626
+        betaNodes    =      35
+        pvNodes      =      6
+        alphaNodes   =      0
+        hashNodes    =      0
+        deadNodes    =      0
+
 depth = 3, bestMove = from 58 to 186
- 花费时间为105ms 
+ 花费时间为99ms 
 
         counter      =      570
-        evalNodes    =      9138
+        evalNodes    =      9144
         betaNodes    =      428
         pvNodes      =      107
         alphaNodes   =      35
-        hashNodes    =      4619
+        hashNodes    =      4613
         deadNodes    =      0
 
 depth = 4, bestMove = from 56 to 71
- 花费时间为556ms 
+ 花费时间为649ms 
 
-        counter      =      7527
-        evalNodes    =      68658
-        betaNodes    =      6851
+        counter      =      7515
+        evalNodes    =      68652
+        betaNodes    =      6839
         pvNodes      =      355
         alphaNodes   =      321
-        hashNodes    =      23928
+        hashNodes    =      23800
         deadNodes    =      0
 
 中局(fen为:2bakab2/9/1c2c1n2/p5p1p/2P4R1/1C2p1P2/P3Pr2P/2N1BC3/4A4/3K1AB2 b)
 
+depth = 1, bestMove = from 152 to 168, capture = 26
+ 花费时间为0ms 
+
+        counter      =      1
+        evalNodes    =      39
+        betaNodes    =      0
+        pvNodes      =      1
+        alphaNodes   =      0
+        hashNodes    =      0
+        deadNodes    =      0
+
+depth = 2, bestMove = from 135 to 151, capture = 30
+ 花费时间为4ms 
+
+        counter      =      40
+        evalNodes    =      1400
+        betaNodes    =      34
+        pvNodes      =      6
+        alphaNodes   =      0
+        hashNodes    =      0
+        deadNodes    =      0
+
 depth = 3, bestMove = from 105 to 121
- 花费时间为104ms 
+ 花费时间为117ms 
 
         counter      =      1052
-        evalNodes    =      16396
+        evalNodes    =      16392
         betaNodes    =      883
         pvNodes      =      135
         alphaNodes   =      34
-        hashNodes    =      4441
+        hashNodes    =      4445
         deadNodes    =      0
 
 depth = 4, bestMove = from 89 to 103
- 花费时间为1337ms 
+ 花费时间为1425ms 
 
-        counter      =      11614
-        evalNodes    =      212165
-        betaNodes    =      10349
-        pvNodes      =      755
+        counter      =      11619
+        evalNodes    =      212147
+        betaNodes    =      10355
+        pvNodes      =      754
         alphaNodes   =      510
-        hashNodes    =      72231
+        hashNodes    =      72897
         deadNodes    =      0
 
 残局(fen为:9/2P6/3k5/4c4/2b6/9/4N4/8B/3n1p3/3K5 b)
 
+depth = 1, bestMove = from 103 to 87
+ 花费时间为0ms 
+
+        counter      =      1
+        evalNodes    =      19
+        betaNodes    =      0
+        pvNodes      =      1
+        alphaNodes   =      0
+        hashNodes    =      0
+        deadNodes    =      0
+
+depth = 2, bestMove = from 103 to 87
+ 花费时间为0ms 
+
+        counter      =      20
+        evalNodes    =      198
+        betaNodes    =      15
+        pvNodes      =      5
+        alphaNodes   =      0
+        hashNodes    =      0
+        deadNodes    =      0
+
 depth = 3, bestMove = from 184 to 183
- 花费时间为6ms 
+ 花费时间为5ms 
 
         counter      =      207
         evalNodes    =      1340
@@ -60,13 +126,13 @@ depth = 3, bestMove = from 184 to 183
         deadNodes    =      0
 
 depth = 4, bestMove = from 184 to 183
- 花费时间为32ms 
+ 花费时间为39ms 
 
         counter      =      1190
-        evalNodes    =      5147
+        evalNodes    =      5150
         betaNodes    =      884
         pvNodes      =      161
         alphaNodes   =      141
-        hashNodes    =      1863
+        hashNodes    =      1860
         deadNodes    =      4
 

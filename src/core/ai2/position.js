@@ -39,25 +39,26 @@ const {
 const initialFen = 'rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w'
 
 class Pos {
-  constructor(fen) {
-    //初始化move stack
-    this.moveStack = []
+  constructor(fen = initialFen, moveStack = []) {
+    this.fenToBoard(fen)
 
-    //初始化局面的zobrist stack
-    this.zobristStack = []
-
-    //初始化局面的check stack
-    this.checkStack = []
-
-    if (fen) {
-      this.fenToBoard(fen)
-    } else {
-      this.initial()
-    }
+    moveStack.forEach(({ from, to }) => {
+      const legalMove = this.getLegalMove(from, to)
+      if (legalMove) {
+        this.makeMove(legalMove)
+      } else {
+        throw new Error('非法的移动')
+      }
+    })
   }
 
-  setToOriginal() {
-    this.fenToBoard(initialFen)
+  static setToOriginal() {
+    const pos = new Pos(initialFen)
+    return pos
+  }
+
+  getLegalMove(from, to) {
+    return this.generateMoves().find((move) => move.from === from && move.to === to)
   }
 
   clearBoard() {
@@ -65,22 +66,6 @@ class Pos {
     this.board = Array.from(Array(256)).map(() => 0)
     //棋子被吃掉的为0
     this.piece = Array.from(Array(48)).map(() => 0)
-    //zobrist
-    this.zobrist = new ZobristNode()
-    this.zobristStack = []
-  }
-
-  initialSide(side) {
-    //0表示为红方回合，1是黑方
-    this.side = side
-
-    //代表当前回合棋子的初始下标
-    this.sideTag = 16 + this.side * 16
-  }
-
-  initial() {
-    this.clearBoard()
-    this.initialSide(0)
   }
 
   canAttack(piecePos, sideTag) {
@@ -185,6 +170,10 @@ class Pos {
     }
   }
 
+  isRepValue(value) {
+    return value === banValue || value === -banValue || value === drawValue || value === -drawValue
+  }
+
   repStatus() {
     let checkIndex = this.checkStack.length - 2
     let zobristIndex = this.zobristStack.length - 2
@@ -238,6 +227,13 @@ class Pos {
   addPiece(pos, pc) {
     this.board[pos] = pc
     this.piece[pc] = pos
+  }
+
+  isChecking() {
+    this.makeEmptyMove()
+    const isChecking = this.isCheck()
+    this.unMakeEmptyMove()
+    return isChecking
   }
 
   changeSide() {
@@ -371,7 +367,6 @@ class Pos {
     this.movePiece(move)
     this.changeSide()
 
-
     if (this.isCheck()) {
       this.unMakeMove()
       return false
@@ -458,7 +453,9 @@ class Pos {
       }
     })
 
-    this.initialSide(fenInfo[1] === 'b' ? 1 : 0)
+    //初始化棋盘颜色
+    this.side = fenInfo[1] === 'b' ? 1 : 0
+    this.sideTag = 16 + this.side * 16
 
     //初始化局面的zobrist
     this.zobrist = this.board.reduce((zobrist, piece, index) => {
@@ -469,10 +466,11 @@ class Pos {
       }
     }, new ZobristNode())
 
-    this.zobristStack.push(this.zobrist)
+    this.zobristStack = [this.zobrist]
     this.makeEmptyMove()
-    this.checkStack.push(this.isCheck())
+    this.checkStack = [this.isCheck()]
     this.unMakeEmptyMove()
+    this.moveStack = []
   }
 }
 
