@@ -224,15 +224,10 @@ class Pos {
     return this.canAttack(opponentKingPos, sideTag)
   }
 
-  addPiece(pos, pc) {
-    this.board[pos] = pc
-    this.piece[pc] = pos
-  }
-
   isChecking() {
-    this.makeEmptyMove()
+    this.changeSide()
     const isChecking = this.isCheck()
-    this.unMakeEmptyMove()
+    this.changeSide()
     return isChecking
   }
 
@@ -289,16 +284,23 @@ class Pos {
   makeEmptyMove() {
     this.zobrist = this.zobrist.xor(zobristSide)
 
-    //存储zobrist值
+    this.moveStack.push(null)
     this.zobristStack.push(this.zobrist)
     this.changeSide()
+    this.checkStack.push(this.isCheck())
   }
 
   unMakeEmptyMove() {
-    //弹出上一个zobrist值
     this.zobristStack.pop()
     this.zobrist = this.zobristStack[this.zobristStack.length - 1]
+
+    this.moveStack.pop()
+    this.checkStack.pop()
     this.changeSide()
+  }
+
+  updateMoveStack(move){
+    
   }
 
   movePiece(move) {
@@ -323,8 +325,8 @@ class Pos {
 
     //改变zobrist值
     const pieceZobrist = zobristTable[this.side][PieceNumToType[movedPiece]][move.from]
-    const nextZobrist = zobristTable[this.side][PieceNumToType[movedPiece]][move.to]
-    this.zobrist = this.zobrist.xor(pieceZobrist).xor(nextZobrist)
+    const nextPieceZobrist = zobristTable[this.side][PieceNumToType[movedPiece]][move.to]
+    this.zobrist = this.zobrist.xor(pieceZobrist).xor(nextPieceZobrist)
     this.zobrist = this.zobrist.xor(zobristSide)
 
     //存储zobrist值
@@ -433,6 +435,11 @@ class Pos {
 
     this.clearBoard()
 
+    const addPiece = (pos, pc) => {
+      this.board[pos] = pc
+      this.piece[pc] = pos
+    }
+
     let row = 3, column = 3
     Array.from(fenInfo[0]).forEach((fenChar) => {
       if (fenChar === '/') {
@@ -446,7 +453,7 @@ class Pos {
           pc[piece] = 0
         }
 
-        this.addPiece((row << 4) + column, pc[piece] + piece)
+        addPiece((row << 4) + column, pc[piece] + piece)
 
         column++
         pc[piece]++
@@ -467,10 +474,10 @@ class Pos {
     }, new ZobristNode())
 
     this.zobristStack = [this.zobrist]
-    this.makeEmptyMove()
-    this.checkStack = [this.isCheck()]
-    this.unMakeEmptyMove()
+    this.checkStack = [this.isChecking()]
     this.moveStack = []
+    //0是红方，1是黑方
+    this.scoreStack = [[]]
   }
 }
 

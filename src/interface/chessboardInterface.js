@@ -57,11 +57,12 @@ class ChessboardInterface {
         return
       }
       fetch('/restore', {
-        method: 'get',
+        method: 'post',
         headers: {
           'Accept': 'application/json',
-          'fileName': document.getElementById('restoreFileName').value
-        }
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ fileName: document.getElementById('restoreFileName').value })
       })
         .then((response) => {
           return response.json()
@@ -115,33 +116,7 @@ class ChessboardInterface {
     if (this.game.side !== this.playSide) {
       return this.moveChess(this.game.search())
     } else {
-      const self = this
-      for (let i = 0; i < 16; i++) {
-        const chessDom = document.getElementById(`chess_${i + this.game.sideTag}`)
-        if (chessDom) {
-          chessDom.onclick = function (ev) {
-            if (self.selectedChess) {
-              self.getCoordinate(self.selectedChess.pos).classList.remove('selected')
-            }
-            self.selectedChess = chessDom
-            self.getCoordinate(this.pos).classList.add('selected')
-            ev.stopPropagation()
-          }
-        }
-      }
-      this.coordinates.forEach((coordinate) => {
-        coordinate.onclick = function (ev) {
-          if (self.selectedChess) {
-            const move = self.game.getLegalMove(self.selectedChess.pos, this.pos)
-            if (move) {
-              this.onclick = null
-              self.getCoordinate(self.selectedChess.pos).classList.remove('selected')
-              self.chesses.forEach((chess) => chess.onclick = null)
-              return self.moveChess(move)
-            }
-          }
-        }
-      })
+
     }
   }
 
@@ -216,10 +191,52 @@ class ChessboardInterface {
 
   display() {
     const fen = this.game.toFen()
-
     const pc = {}
 
+    console.log(fen)
     const fenInfo = fen.split(' ')
+
+    this.coordinates.forEach((coordinate) => {
+      coordinate.innerHTML = ''
+      coordinate.classList.remove('lastSelected')
+      coordinate.classList.remove('lastSelecting')
+      coordinate.classList.remove('selected')
+    })
+
+    if (this.game.moveStack.length >= 1) {
+      const lastMove = this.game.moveStack[this.game.moveStack.length - 1]
+      this.getCoordinate(lastMove.from).classList.add('lastSelected')
+      this.getCoordinate(lastMove.to).classList.add('lastSelecting')
+    }
+
+    const self = this
+    this.chesses.forEach((chess) => chess.onclick = null)
+    for (let i = 0; i < 16; i++) {
+      const chessDom = this.getChess({ id: i + this.game.sideTag })
+      if (chessDom) {
+        chessDom.onclick = function (ev) {
+          if (self.selectedChess) {
+            self.getCoordinate(self.selectedChess.pos).classList.remove('selected')
+          }
+          self.selectedChess = chessDom
+          self.getCoordinate(this.pos).classList.add('selected')
+          ev.stopPropagation()
+        }
+      }
+    }
+    this.coordinates.forEach((coordinate) => {
+      coordinate.onclick = function (ev) {
+        if (self.selectedChess) {
+          const move = self.game.getLegalMove(self.selectedChess.pos, this.pos)
+          if (move) {
+            this.onclick = null
+            self.getCoordinate(self.selectedChess.pos).classList.remove('selected')
+            self.chesses.forEach((chess) => chess.onclick = null)
+            return self.moveChess(move)
+          }
+        }
+      }
+    })
 
     const addPiece = (chessId, row, column) => {
       const pos = (row << 4) + column
@@ -248,18 +265,6 @@ class ChessboardInterface {
         pc[piece]++
       }
     })
-
-    this.coordinates.forEach((coordinate) => {
-      coordinate.classList.remove('lastSelected')
-      coordinate.classList.remove('lastSelecting')
-      coordinate.classList.remove('selected')
-    })
-
-    if (this.game.moveStack.length >= 1) {
-      const lastMove = this.game.moveStack[this.game.moveStack.length - 1]
-      this.getCoordinate(lastMove.from).classList.add('lastSelected')
-      this.getCoordinate(lastMove.to).classList.add('lastSelecting')
-    }
     this.selectedChess = null
   }
 }

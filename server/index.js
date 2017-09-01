@@ -30,8 +30,8 @@ app.post('/record', (req, res) => {
   })
 })
 
-app.get('/restore', (req, res) => {
-  const fileName = req.get('fileName')
+app.post('/restore', (req, res) => {
+  const fileName = req.body.fileName
   fs.readFile(path.resolve(`./server/strange/${fileName}`), 'utf8', (err, data) => {
     if (err) {
       return res.send(err)

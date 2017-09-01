@@ -2,6 +2,7 @@ const fs = require('fs')
 const path = require('path')
 
 const Pos = require('./position')
+const { Move } = require('./util')
 const { checkmatedValue } = require('./evaluate')
 const { HashTable, hashAlpha, hashBeta, hashExact } = require('./hashtable')
 
@@ -25,6 +26,9 @@ const fen2 = '2bakab2/9/1c2c1n2/p5p1p/2P4R1/1C2p1P2/P3Pr2P/2N1BC3/4A4/3K1AB2 b'
 
 //残局
 const fen3 = '9/2P6/3k5/4c4/2b6/9/4N4/8B/3n1p3/3K5 b'
+
+//strange
+const fen4 = 'r1bakab1r/9/2n1c1nc1/p1p1p1p1p/9/9/P1P1P1P1P/1C4N1C/9/RNBAKABR1 w'
 
 function MinMaxTest(sg_searchNode, pos, maxDepth) {
   let resultMove = null
@@ -85,10 +89,16 @@ function AlphaBeta(initialAlpha = -Infinity, initialBeta = Infinity, sg_searchNo
     let alphaFlag = 0
     //是否一步也没走
     let unMoveFlag = 1
+    //初始化得分
+    let bestScore = -Infinity
 
     for (let move of pos.generateMoves()) {
       if (pos.makeMove(move)) {
         unMoveFlag = 0
+        let newDepth = depth - 1
+        if (pos.isChecking()) {
+          newDepth = depth
+        }
         const score = -helper(-beta, -alpha, depth - 1)
         pos.unMakeMove()
 
@@ -97,10 +107,13 @@ function AlphaBeta(initialAlpha = -Infinity, initialBeta = Infinity, sg_searchNo
           return beta
         }
 
-        if (score > alpha) {
-          bestMove = move
-          alphaFlag = 1
-          alpha = score
+        if (score > bestScore) {
+          bestScore = score
+          if (score > alpha) {
+            bestMove = move
+            alphaFlag = 1
+            alpha = score
+          }
         }
       }
     }
@@ -328,16 +341,18 @@ function sortedMoveHashTable(initialAlpha = -Infinity, initialBeta = Infinity, s
 
       //mvv/lva排序吃子走法
       if (move1.wvl != null && move2.wvl != null) {
-        return move1.wvl - move2.wvl > 0 ? -1 : 1
+        const gap = move1.wvl - move2.wvl
+        return gap > 0 ? -1 : gap === 0 ? 0 : 1
       } else if (move1.wvl != null && move2.wvl == null) {
         return -1
       } else if (move2.wvl != null && move1.wvl == null) {
         return 1
       }
 
-      //历史表排序不吃子走法
+      // 历史表排序不吃子走法
       else {
-        return historyTable[move1.to][move1.from] - historyTable[move2.to][move2.from] > 0 ? -1 : 1
+        const gap = historyTable[move1.to][move1.from] - historyTable[move2.to][move2.from]
+        return gap > 0 ? -1 : gap === 0 ? 0 : 1
       }
     }
   }
@@ -368,12 +383,19 @@ function sortedMoveHashTable(initialAlpha = -Infinity, initialBeta = Infinity, s
     const ply = pos.moveStack.length
 
     //获得之前的值
-    const previousScore = hashTable.readHashTable(zobrist, depth, alpha, beta, pos.moveStack.length)
-    if (typeof previousScore === 'number') {
-      sg_searchNode.hashNodes++
-      return previousScore
+    const hashScore = hashTable.readHashTable(zobrist, depth, alpha, beta, ply)
+    let hashMv
+
+    if (hashScore != null) {
+      //2.1 找到了可用的得分
+      if (typeof hashScore === 'number') {
+        // return hashScore
+      }
+      //2.2 找到了可用的置换表走法
+      else if (hashScore instanceof Move) {
+        hashMv = hashScore
+      }
     }
-    const lastGoodMv = previousScore
 
     if (depth <= 0) {
       sg_searchNode.evalNodes++
@@ -392,7 +414,7 @@ function sortedMoveHashTable(initialAlpha = -Infinity, initialBeta = Infinity, s
     //是否一步也没走
     let unMoveFlag = 1
 
-    const moves = pos.generateMoves().sort(sortingMoves(lastGoodMv, pos.moveStack.length))
+    const moves = pos.generateMoves().sort(sortingMoves(hashMv, pos.moveStack.length))
 
     for (let move of moves) {
       if (pos.makeMove(move)) {
@@ -467,8 +489,8 @@ function iterateSortedHashTable(initialAlpha = -Infinity, initialBeta = Infinity
       return 1
     }
     else {
+      //按杀手1排序
       if (killerMove[ply]) {
-        //按杀手1排序
         if (killerMove[ply][0] && killerMove[ply][0].equal(move1)) {
           return -1
         } else if (killerMove[ply][0] && killerMove[ply][0].equal(move2)) {
@@ -485,16 +507,18 @@ function iterateSortedHashTable(initialAlpha = -Infinity, initialBeta = Infinity
 
       //mvv/lva排序吃子走法
       if (move1.wvl != null && move2.wvl != null) {
-        return move1.wvl - move2.wvl > 0 ? -1 : 1
+        const gap = move1.wvl - move2.wvl
+        return gap > 0 ? -1 : gap === 0 ? 0 : 1
       } else if (move1.wvl != null && move2.wvl == null) {
         return -1
       } else if (move2.wvl != null && move1.wvl == null) {
         return 1
       }
 
-      //历史表排序不吃子走法
+      // 历史表排序不吃子走法
       else {
-        return historyTable[move1.to][move1.from] - historyTable[move2.to][move2.from] > 0 ? -1 : 1
+        const gap = historyTable[move1.to][move1.from] - historyTable[move2.to][move2.from]
+        return gap > 0 ? -1 : gap === 0 ? 0 : 1
       }
     }
   }
@@ -646,16 +670,18 @@ function PVS(initialAlpha = -Infinity, initialBeta = Infinity, sg_searchNode, po
 
       //mvv/lva排序吃子走法
       if (move1.wvl != null && move2.wvl != null) {
-        return move1.wvl - move2.wvl > 0 ? -1 : 1
+        const gap = move1.wvl - move2.wvl
+        return gap > 0 ? -1 : gap === 0 ? 0 : 1
       } else if (move1.wvl != null && move2.wvl == null) {
         return -1
       } else if (move2.wvl != null && move1.wvl == null) {
         return 1
       }
 
-      //历史表排序不吃子走法
+      // 历史表排序不吃子走法
       else {
-        return historyTable[move1.to][move1.from] - historyTable[move2.to][move2.from] > 0 ? -1 : 1
+        const gap = historyTable[move1.to][move1.from] - historyTable[move2.to][move2.from]
+        return gap > 0 ? -1 : gap === 0 ? 0 : 1
       }
     }
   }
@@ -784,10 +810,14 @@ function main(fileName, func, maxDepth = 7) {
   let resultInfo = ''
   const name = ['开局', '中局', '残局'];
 
-  [fen1, fen2, fen3].forEach((fen, index) => {
+  [fen1, fen2, fen3, fen4].forEach((fen, index) => {
     const pos = new Pos(fen)
 
-    resultInfo += `${name[index]}(fen为:${fen})\n\n`
+    if (name[index]) {
+      resultInfo += `${name[index]}(fen为:${fen})\n\n`
+    } else {
+      resultInfo += `strange${index - 2}(fen为:${fen})\n\n`
+    }
 
     for (let i = 1; i <= maxDepth; i++) {
       const sg_searchNode = new Sg_searchNode()
@@ -836,7 +866,10 @@ function NullMoveAlphaBeta(initialAlpha = -Infinity, initialBeta = Infinity, sg_
 
   let nullDepth = 2
   let time = 0
-  const score = (function helper(alpha, beta, depth, nullMove = false) {
+
+  const nullOkMargin = 200
+  const nullSafeMargin = 400
+  const score = (function helper(alpha, beta, depth, nullMove = true) {
     if (depth <= 0) {
       sg_searchNode.evalNodes++
       return pos.evaluate()
@@ -849,7 +882,8 @@ function NullMoveAlphaBeta(initialAlpha = -Infinity, initialBeta = Infinity, sg_
       const nullScore = -helper(-beta, -beta + 1, depth - 1 - nullDepth, true)
       pos.unMakeEmptyMove()
 
-      if (nullScore > beta) {
+      //我认为beta-1到beta就足够验证了，但其他人这里设的是alpha，beta
+      if (nullScore >= beta && helper(beta - 1, beta, depth - nullDepth, true) >= beta) {
         return nullScore
       }
     }
@@ -913,18 +947,18 @@ function NullMoveAlphaBeta(initialAlpha = -Infinity, initialBeta = Infinity, sg_
   return resultMove
 }
 
-// main('MinMax_test_result', MinMaxTest, 4)
-// main('AlphaBeta_test_result', AlphaBeta.bind(null, -Infinity, Infinity), 7)
-// main('NullMoveAlphaBeta_test_result', NullMoveAlphaBeta.bind(null, -Infinity, Infinity),4)
+// main('MinMax_test_result', MinMaxTest, 1)
+main('AlphaBeta_test_result', AlphaBeta.bind(null, -Infinity, Infinity), 5)
+main('NullMoveAlphaBeta_test_result', NullMoveAlphaBeta.bind(null, -Infinity, Infinity), 5)
 // main('AlphaBetaWithHashTable_test_result', AlphaBetaWithHashTable.bind(null, -Infinity, Infinity), 4)
 // main('AlphaBetaWithHashTable2_test_result', AlphaBetaWithHashTable2.bind(null, -Infinity, Infinity), 4)
 // main('sortedMoveHashTable_test_result', sortedMoveHashTable.bind(null, -Infinity, Infinity), 4)
 // main('PVS_test_result', PVS.bind(null, -Infinity, Infinity), 7)
 
-// console.log(PVS(-Infinity,Infinity,new Sg_searchNode(),new Pos(),4))
-console.log(MinMaxTest(new Sg_searchNode(),new Pos(),4))
+// console.log(AlphaBeta(-Infinity, Infinity, new Sg_searchNode(), new Pos('r1bakabn1/3r5/1cn4c1/p1p1p1p1p/9/2P6/P3P1P1P/1CNC5/4A4/R1BAK1BNR b'), 5))
+// console.log(MinMaxTest(new Sg_searchNode(),new Pos('1nbakabnr/r8/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/2N1C2C1/9/R1BAKABNR b'),5))
 
-// console.log(AlphaBeta(-Infinity, Infinity, new Sg_searchNode(), new Pos(fen1), 4))
+// console.log(NullMoveAlphaBeta(-Infinity, Infinity, new Sg_searchNode(), new Pos(), 5))
 
 // console.log(sortedMoveHashTable(-Infinity, Infinity, new Sg_searchNode(), new Pos(fen1), 4))
 

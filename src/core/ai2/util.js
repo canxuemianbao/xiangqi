@@ -183,6 +183,10 @@ exports.CharToInt = function (value) {
   }
 }
 
+exports.getRowAndColumn = function (pos) {
+  return { row: (pos >> 4) - 2, column: pos % 16 - 3 + 1 }
+}
+
 //move
 exports.Move = class {
 

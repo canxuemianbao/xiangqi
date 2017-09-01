@@ -5,7 +5,6 @@ function search(pos) {
   const resultMove = ComputerThinkTimer(pos,1000)
   const end = Date.now()
 
-  console.log("time consume: " + (end - start))
   if (!resultMove) return null
 
   return resultMove

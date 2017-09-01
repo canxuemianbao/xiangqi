@@ -48,9 +48,7 @@ console.assert(hashTable.readHashTable(node4, 1) === 3)
 console.assert(hashTable.readHashTable(node4, 4) == null)
 
 let pos1 = new Pos()
-pos1.setToOriginal()
 let pos2 = new Pos()
-pos2.setToOriginal()
 
 hashTable = new HashTable()
 
@@ -83,6 +81,6 @@ function testZobrist(pos = new Pos(), depth = 4, hashTable = new HashTable()) {
   }
 }
 
-pos1.setToOriginal()
+pos1=new Pos()
 
 testZobrist(pos1,5)

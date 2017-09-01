@@ -5,6 +5,7 @@ const { Move } = require('./util')
 
 const timeout = 5 * 1000
 const timeoutValue = 300000
+const limitDepth = 40
 
 //用于判断是否将死
 function MinMax(pos, maxDepth = 1) {
@@ -48,6 +49,7 @@ let killerMove = []
 let isFinished = true
 let bestMove = null
 let searchDepth = 1
+const nullDepth = 2
 
 //重置整个搜索
 function initial() {
@@ -60,23 +62,22 @@ function initial() {
 
 //对走法进行排序
 const sortingMoves = (hashMv, ply) => (move1, move2) => {
-  //1. 置换表排序
+  //置换表排序
   if (move1 === hashMv) {
     return -1
   } else if (move2 === hashMv) {
     return 1
   }
   else {
-    //2. 按杀手排序
+    //按杀手1排序
     if (killerMove[ply]) {
-      //2.1 按杀手1排序
       if (killerMove[ply][0] && killerMove[ply][0].equal(move1)) {
         return -1
       } else if (killerMove[ply][0] && killerMove[ply][0].equal(move2)) {
         return 1
       }
 
-      //2.2 按杀手2排序
+      //按杀手2排序
       if (killerMove[ply][1] && killerMove[ply][1].equal(move1)) {
         return -1
       } else if (killerMove[ply][1] && killerMove[ply][1].equal(move2)) {
@@ -84,18 +85,20 @@ const sortingMoves = (hashMv, ply) => (move1, move2) => {
       }
     }
 
-    //3.按mvv/lva排序吃子走法
+    //mvv/lva排序吃子走法
     if (move1.wvl != null && move2.wvl != null) {
-      return move1.wvl - move2.wvl > 0 ? -1 : 1
+      const gap = move1.wvl - move2.wvl
+      return gap > 0 ? -1 : gap === 0 ? 0 : 1
     } else if (move1.wvl != null && move2.wvl == null) {
       return -1
     } else if (move2.wvl != null && move1.wvl == null) {
       return 1
     }
 
-    //4.按历史表排序不吃子走法
+    // 历史表排序不吃子走法
     else {
-      return historyTable[move1.to][move1.from] - historyTable[move2.to][move2.from] > 0 ? -1 : 1
+      const gap = historyTable[move1.to][move1.from] - historyTable[move2.to][move2.from]
+      return gap > 0 ? -1 : gap === 0 ? 0 : 1
     }
   }
 }
@@ -122,21 +125,78 @@ function saveGoodMove(mv, depth, ply) {
 
 //静态搜索
 function QuiescentSearch(pos, alpha, beta) {
-  return pos.evaluate()
+  const ply = pos.moveStack.length
+
+  //1. 是否走了连续将军的走法，导致局面重复
+  const repValue = pos.repValue()
+  if (repValue) {
+    return repValue
+  }
+
+  //2. 局面是否足够好到产生截断
+  const score = pos.evaluate()
+  if (score >= beta) {
+    return score
+  }
+
+  //3. 到达了极限深度
+  if (ply >= limitDepth) {
+    return pos.evaluate()
+  }
+
+  //4. 初始化最低值
+  let bestScore = score
+
+  //5. 生成能走的走法
+  let moves = pos.generateMoves()
+
+  //5.1 是否被将军中
+  const isChecking = pos.isChecking()
+
+  //5.2 是否有棋可走，没有则被将死了
+  let hasMove = false
+
+  //6. 搜索所有走法
+  for (let move of moves) {
+    if (pos.makeMove(move)) {
+      hasMove = true
+
+      //如果正在被将军，走全部走法，如果没有被将军，走吃子走法
+      if (isChecking || move.capture) {
+        const score = -QuiescentSearch(pos, -beta, -alpha)
+        if (score >= beta) {
+          pos.unMakeMove()
+          return score
+        }
+
+        if (score > bestScore) {
+          bestScore = score
+
+          if (score > alpha) {
+            alpha = score
+          }
+        }
+      }
+      pos.unMakeMove()
+    }
+  }
+
+  //7. 返回得分，如果没有走法，返回将死得分
+  return hasMove ? bestScore : ply - checkmatedValue
 }
 
 function PVS(pos, finishTime, alpha = -Infinity, beta = Infinity, depth) {
-  //0. 判断是否超时
+  // 0. 判断是否超时
   if (Date.now() > finishTime) {
     isFinished = false
     return timeoutValue
   }
 
-  //1. 查看当前局面是否重复了
-  // const repValue = pos.repValue()
-  // if (repValue) {
-  //   return repValue
-  // }
+  // 1. 查看当前局面是否重复了
+  const repValue = pos.repValue()
+  if (repValue) {
+    return repValue
+  }
 
   //获得pos的zobrist值和当前已经走过的步数
   const zobrist = pos.zobrist
@@ -148,7 +208,6 @@ function PVS(pos, finishTime, alpha = -Infinity, beta = Infinity, depth) {
 
   if (hashScore != null) {
     //2.1 找到了可用的得分
-
     if (typeof hashScore === 'number') {
       return hashScore
     }
@@ -158,11 +217,10 @@ function PVS(pos, finishTime, alpha = -Infinity, beta = Infinity, depth) {
     }
   }
 
-
   //3. 查看是否到达水平线,小于0是因为空步可能导致深度小于0
   if (depth <= 0) {
-    const eval = QuiescentSearch(pos, alpha, beta)
-    hashTable.saveHashTable(zobrist, eval, depth, hashExact, null, ply)
+    // const eval = QuiescentSearch(pos, alpha, beta)
+    const eval = pos.evaluate()
     return eval
   }
 
@@ -172,6 +230,7 @@ function PVS(pos, finishTime, alpha = -Infinity, beta = Infinity, depth) {
   //5. 按顺序进行pvs-alpha-beta算法
   let pvFlag = 0
   let bestScore = -Infinity
+  let exceedAlpha = 0
   let bestMove = null
   for (let move of moves) {
     //如果这个走法是合法的(不会将死自己)
@@ -196,13 +255,10 @@ function PVS(pos, finishTime, alpha = -Infinity, beta = Infinity, depth) {
 
       //产生beta截断
       if (score >= beta) {
-        //如果不是因为重复局面而返回值的话
-        if (!pos.isRepValue(score)) {
-          //保存得分到置换表里
-          hashTable.saveHashTable(zobrist, score, depth, hashBeta, move, ply)
-          //保存走法到历史表里
-          saveGoodMove(move, depth, ply)
-        }
+        //保存得分到置换表里
+        hashTable.saveHashTable(zobrist, score, depth, hashBeta, move, ply)
+        //保存走法到历史表里
+        saveGoodMove(move, depth, ply)
         return score
       }
 
@@ -213,6 +269,7 @@ function PVS(pos, finishTime, alpha = -Infinity, beta = Infinity, depth) {
         //更新alpha值
         if (score > alpha) {
           alpha = score
+          exceedAlpha = 1
         }
       }
     }
@@ -221,7 +278,7 @@ function PVS(pos, finishTime, alpha = -Infinity, beta = Infinity, depth) {
   //6. 判断得分
 
   //6.1 搜完了整棵树
-  if(searchDepth === depth){
+  if (searchDepth === depth) {
     return bestMove
   }
 
@@ -236,19 +293,13 @@ function PVS(pos, finishTime, alpha = -Infinity, beta = Infinity, depth) {
   //6.3 有走法
   else {
     //6.3.1走法是准确值，超过了初始alpha
-    if (bestScore === alpha) {
-      //如果不是因为重复局面而返回的话
-      if (!pos.repValue(bestScore)) {
-        hashTable.saveHashTable(zobrist, bestScore, depth, hashExact, bestMove, ply)
-      }
+    if (exceedAlpha) {
+      hashTable.saveHashTable(zobrist, bestScore, depth, hashExact, bestMove, ply)
       return bestScore
     }
     //6.3.2走法不好，比初始alpha还差
     else {
-      //如果不是因为重复局面而返回的话
-      if (!pos.repValue(bestScore)) {
-        hashTable.saveHashTable(zobrist, bestScore, depth, hashAlpha, bestMove, ply)
-      }
+      hashTable.saveHashTable(zobrist, bestScore, depth, hashAlpha, bestMove, ply)
       return bestScore
     }
   }
@@ -260,11 +311,13 @@ function ComputerThinkTimer(pos, remainTime = timeout, maxDepth = 20) {
   const finishTime = Date.now() + timeout
   let bestMove = null
   for (let i = 1; i <= maxDepth; i++) {
-
     searchDepth = i
+    console.log('=========')
     const resultMove = PVS(pos, finishTime, -Infinity, Infinity, i)
 
     if (resultMove && isFinished) {
+      console.log("搜索层数: " + i)
+      console.log(resultMove)
       bestMove = resultMove
     }
 
@@ -275,8 +328,14 @@ function ComputerThinkTimer(pos, remainTime = timeout, maxDepth = 20) {
   return bestMove
 }
 
-searchDepth = 4
-console.log(PVS(new Pos(), Date.now()+10000000000000000, -Infinity, Infinity, 4))
+const { IntToChar, getRowAndColumn, InitialBoard } = require('./util')
+
+
+searchDepth = 6
+// console.log(PVS(new Pos('1r2kCb2/4n4/b5c2/p2RR1n1p/2c6/9/P3P3P/4B1N2/9/1r1AKAB2 b'), Date.now() + 10000000, -Infinity, Infinity, 6))
+
+// console.log(IntToChar(new Pos('1r2kCb2/4n4/b5c2/p2RR1n1p/2c6/9/P3P3P/4B1N2/9/1r1AKAB2 b').board[52]))
+// console.log(IntToChar(new Pos('1r2kCb2/4n4/b5c2/p2RR1n1p/2c6/9/P3P3P/4B1N2/9/1r1AKAB2 b').board[116]))
 
 module.exports = {
   ComputerThinkTimer,
