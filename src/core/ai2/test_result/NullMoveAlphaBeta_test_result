@@ -23,7 +23,7 @@ depth = 2, bestMove = from 84 to 196, capture = 22
         deadNodes    =      0
 
 depth = 3, bestMove = from 58 to 186
- 花费时间为64ms 
+ 花费时间为72ms 
 
         counter      =      570
         evalNodes    =      13757
@@ -34,7 +34,7 @@ depth = 3, bestMove = from 58 to 186
         deadNodes    =      0
 
 depth = 4, bestMove = from 56 to 71
- 花费时间为498ms 
+ 花费时间为510ms 
 
         counter      =      9646
         evalNodes    =      114789
@@ -45,7 +45,7 @@ depth = 4, bestMove = from 56 to 71
         deadNodes    =      0
 
 depth = 5, bestMove = from 58 to 186
- 花费时间为8123ms 
+ 花费时间为8002ms 
 
         counter      =      96338
         evalNodes    =      2037260
@@ -69,7 +69,7 @@ depth = 1, bestMove = from 152 to 168, capture = 26
         deadNodes    =      0
 
 depth = 2, bestMove = from 135 to 151, capture = 30
- 花费时间为4ms 
+ 花费时间为3ms 
 
         counter      =      40
         evalNodes    =      1400
@@ -80,7 +80,7 @@ depth = 2, bestMove = from 135 to 151, capture = 30
         deadNodes    =      0
 
 depth = 3, bestMove = from 105 to 121
- 花费时间为66ms 
+ 花费时间为63ms 
 
         counter      =      1052
         evalNodes    =      20837
@@ -91,7 +91,7 @@ depth = 3, bestMove = from 105 to 121
         deadNodes    =      0
 
 depth = 4, bestMove = from 89 to 103
- 花费时间为1072ms 
+ 花费时间为1086ms 
 
         counter      =      14057
         evalNodes    =      352110
@@ -102,7 +102,7 @@ depth = 4, bestMove = from 89 to 103
         deadNodes    =      0
 
 depth = 5, bestMove = from 105 to 121
- 花费时间为16003ms 
+ 花费时间为15381ms 
 
         counter      =      270808
         evalNodes    =      4600159
@@ -126,7 +126,7 @@ depth = 1, bestMove = from 103 to 87
         deadNodes    =      0
 
 depth = 2, bestMove = from 103 to 87
- 花费时间为1ms 
+ 花费时间为0ms 
 
         counter      =      20
         evalNodes    =      198
@@ -137,7 +137,7 @@ depth = 2, bestMove = from 103 to 87
         deadNodes    =      0
 
 depth = 3, bestMove = from 184 to 183
- 花费时间为6ms 
+ 花费时间为5ms 
 
         counter      =      207
         evalNodes    =      2216
@@ -148,7 +148,7 @@ depth = 3, bestMove = from 184 to 183
         deadNodes    =      0
 
 depth = 4, bestMove = from 184 to 183
- 花费时间为22ms 
+ 花费时间为27ms 
 
         counter      =      1588
         evalNodes    =      8408
@@ -159,7 +159,7 @@ depth = 4, bestMove = from 184 to 183
         deadNodes    =      6
 
 depth = 5, bestMove = from 184 to 183
- 花费时间为292ms 
+ 花费时间为270ms 
 
         counter      =      14873
         evalNodes    =      98999
@@ -183,7 +183,7 @@ depth = 1, bestMove = from 202 to 90, capture = 42
         deadNodes    =      0
 
 depth = 2, bestMove = from 196 to 165
- 花费时间为2ms 
+ 花费时间为4ms 
 
         counter      =      43
         evalNodes    =      555
@@ -194,7 +194,7 @@ depth = 2, bestMove = from 196 to 165
         deadNodes    =      0
 
 depth = 3, bestMove = from 196 to 165
- 花费时间为82ms 
+ 花费时间为81ms 
 
         counter      =      973
         evalNodes    =      20822
@@ -205,7 +205,7 @@ depth = 3, bestMove = from 196 to 165
         deadNodes    =      0
 
 depth = 4, bestMove = from 164 to 84
- 花费时间为397ms 
+ 花费时间为391ms 
 
         counter      =      7975
         evalNodes    =      93709
@@ -216,7 +216,7 @@ depth = 4, bestMove = from 164 to 84
         deadNodes    =      0
 
 depth = 5, bestMove = from 202 to 106
- 花费时间为10402ms 
+ 花费时间为8986ms 
 
         counter      =      122831
         evalNodes    =      2226319

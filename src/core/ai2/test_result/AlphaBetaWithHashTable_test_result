@@ -12,7 +12,7 @@ depth = 1, bestMove = from 84 to 196, capture = 22
         deadNodes    =      0
 
 depth = 2, bestMove = from 84 to 196, capture = 22
- 花费时间为8ms 
+ 花费时间为4ms 
 
         counter      =      41
         evalNodes    =      626
@@ -23,25 +23,25 @@ depth = 2, bestMove = from 84 to 196, capture = 22
         deadNodes    =      0
 
 depth = 3, bestMove = from 58 to 186
- 花费时间为137ms 
+ 花费时间为82ms 
 
         counter      =      570
-        evalNodes    =      9144
+        evalNodes    =      9152
         betaNodes    =      428
         pvNodes      =      107
         alphaNodes   =      35
-        hashNodes    =      4613
+        hashNodes    =      4605
         deadNodes    =      0
 
 depth = 4, bestMove = from 56 to 71
- 花费时间为743ms 
+ 花费时间为613ms 
 
-        counter      =      8258
-        evalNodes    =      68901
-        betaNodes    =      7579
+        counter      =      8268
+        evalNodes    =      68917
+        betaNodes    =      7589
         pvNodes      =      355
         alphaNodes   =      324
-        hashNodes    =      31720
+        hashNodes    =      31839
         deadNodes    =      0
 
 中局(fen为:2bakab2/9/1c2c1n2/p5p1p/2P4R1/1C2p1P2/P3Pr2P/2N1BC3/4A4/3K1AB2 b)
@@ -58,7 +58,7 @@ depth = 1, bestMove = from 152 to 168, capture = 26
         deadNodes    =      0
 
 depth = 2, bestMove = from 135 to 151, capture = 30
- 花费时间为5ms 
+ 花费时间为8ms 
 
         counter      =      40
         evalNodes    =      1400
@@ -69,25 +69,25 @@ depth = 2, bestMove = from 135 to 151, capture = 30
         deadNodes    =      0
 
 depth = 3, bestMove = from 105 to 121
- 花费时间为104ms 
+ 花费时间为90ms 
 
         counter      =      1052
-        evalNodes    =      16392
+        evalNodes    =      16393
         betaNodes    =      883
         pvNodes      =      135
         alphaNodes   =      34
-        hashNodes    =      4445
+        hashNodes    =      4444
         deadNodes    =      0
 
 depth = 4, bestMove = from 89 to 103
- 花费时间为2217ms 
+ 花费时间为1616ms 
 
-        counter      =      12524
-        evalNodes    =      213767
-        betaNodes    =      11233
-        pvNodes      =      754
+        counter      =      12507
+        evalNodes    =      213662
+        betaNodes    =      11214
+        pvNodes      =      756
         alphaNodes   =      537
-        hashNodes    =      97087
+        hashNodes    =      96797
         deadNodes    =      0
 
 残局(fen为:9/2P6/3k5/4c4/2b6/9/4N4/8B/3n1p3/3K5 b)
@@ -115,7 +115,7 @@ depth = 2, bestMove = from 103 to 87
         deadNodes    =      0
 
 depth = 3, bestMove = from 184 to 183
- 花费时间为14ms 
+ 花费时间为5ms 
 
         counter      =      207
         evalNodes    =      1340
@@ -126,13 +126,59 @@ depth = 3, bestMove = from 184 to 183
         deadNodes    =      0
 
 depth = 4, bestMove = from 184 to 183
- 花费时间为47ms 
+ 花费时间为29ms 
 
-        counter      =      1250
-        evalNodes    =      5161
-        betaNodes    =      938
+        counter      =      1253
+        evalNodes    =      5159
+        betaNodes    =      941
         pvNodes      =      162
         alphaNodes   =      150
-        hashNodes    =      2234
+        hashNodes    =      2240
         deadNodes    =      4
+
+strange1(fen为:r1bakab1r/9/2n1c1nc1/p1p1p1p1p/9/9/P1P1P1P1P/1C4N1C/9/RNBAKABR1 w)
+
+depth = 1, bestMove = from 202 to 90, capture = 42
+ 花费时间为0ms 
+
+        counter      =      1
+        evalNodes    =      42
+        betaNodes    =      0
+        pvNodes      =      1
+        alphaNodes   =      0
+        hashNodes    =      0
+        deadNodes    =      0
+
+depth = 2, bestMove = from 196 to 165
+ 花费时间为9ms 
+
+        counter      =      43
+        evalNodes    =      555
+        betaNodes    =      38
+        pvNodes      =      5
+        alphaNodes   =      0
+        hashNodes    =      0
+        deadNodes    =      0
+
+depth = 3, bestMove = from 196 to 165
+ 花费时间为106ms 
+
+        counter      =      973
+        evalNodes    =      14991
+        betaNodes    =      803
+        pvNodes      =      132
+        alphaNodes   =      38
+        hashNodes    =      5831
+        deadNodes    =      0
+
+depth = 4, bestMove = from 164 to 84
+ 花费时间为467ms 
+
+        counter      =      6591
+        evalNodes    =      62591
+        betaNodes    =      5523
+        pvNodes      =      631
+        alphaNodes   =      437
+        hashNodes    =      20551
+        deadNodes    =      0
 
