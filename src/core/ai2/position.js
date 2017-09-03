@@ -17,7 +17,7 @@ const {
   canAttackByKnight,
   canAttackByRook,
   canAttackByCannon,
-  canAttackByPawn
+  canAttackByPawn,
 } = require('./util')
 
 const {
@@ -26,7 +26,9 @@ const {
   evalBlackMove,
   evalWhiteMove,
   banValue,
-  drawValue
+  drawValue,
+  nullOkMargin,
+  nullSafeMargin
 } = require('./evaluate')
 
 const {
@@ -281,26 +283,34 @@ class Pos {
     return moves
   }
 
-  makeEmptyMove() {
-    this.zobrist = this.zobrist.xor(zobristSide)
+  get zobrist() {
+    return this.zobristStack[this.zobristStack.length - 1]
+  }
 
+  makeEmptyMove() {
     this.moveStack.push(null)
-    this.zobristStack.push(this.zobrist)
-    this.changeSide()
+    this.zobristStack.push(this.zobrist.xor(zobristSide))
     this.checkStack.push(this.isCheck())
+    this.scoreStack.push([])
+    this.changeSide()
+
+    if (this.isCheck()) {
+      this.unMakeEmptyMove()
+      return false
+    }
+    return true
   }
 
   unMakeEmptyMove() {
     this.zobristStack.pop()
-    this.zobrist = this.zobristStack[this.zobristStack.length - 1]
-
     this.moveStack.pop()
     this.checkStack.pop()
+    this.scoreStack.pop()
     this.changeSide()
   }
 
-  updateMoveStack(move){
-    
+  updateMoveStack(move) {
+
   }
 
   movePiece(move) {
@@ -313,6 +323,7 @@ class Pos {
     this.board[move.to] = movedPiece
     this.piece[movedPiece] = move.to
 
+    let newZobrist = this.zobrist
     //吃棋子
     if (move.capture) {
       const capturedPos = this.piece[move.capture]
@@ -320,29 +331,26 @@ class Pos {
 
       //改变zobrist值
       const otherSide = this.side ? 0 : 1
-      this.zobrist = this.zobrist.xor(zobristTable[otherSide][PieceNumToType[move.capture]][move.to])
+      newZobrist = newZobrist.xor(zobristTable[otherSide][PieceNumToType[move.capture]][move.to])
     }
 
     //改变zobrist值
     const pieceZobrist = zobristTable[this.side][PieceNumToType[movedPiece]][move.from]
     const nextPieceZobrist = zobristTable[this.side][PieceNumToType[movedPiece]][move.to]
-    this.zobrist = this.zobrist.xor(pieceZobrist).xor(nextPieceZobrist)
-    this.zobrist = this.zobrist.xor(zobristSide)
+    newZobrist = newZobrist.xor(pieceZobrist).xor(nextPieceZobrist).xor(zobristSide)
 
     //存储zobrist值
-    this.zobristStack.push(this.zobrist)
+    this.zobristStack.push(newZobrist)
 
-    if (this.isCheck()) {
-      this.checkStack.push(true)
-    } else {
-      this.checkStack.push(false)
-    }
+    //存储是否将军
+    this.checkStack.push(this.isCheck())
+
+    this.scoreStack.push([])
   }
 
   unMovePiece() {
     //弹出上一个zobrist值
     this.zobristStack.pop()
-    this.zobrist = this.zobristStack[this.zobristStack.length - 1]
 
     //撤销将军判断
     this.checkStack.pop()
@@ -363,6 +371,8 @@ class Pos {
       this.board[move.to] = move.capture
       this.piece[move.capture] = move.to
     }
+
+    this.scoreStack.pop()
   }
 
   makeMove(move) {
@@ -413,19 +423,46 @@ class Pos {
     return fen
   }
 
-  evaluate() {
-    const whiteScore = evalWhite(this)
-    const blackScore = evalBlack(this)
-
-    // const whiteMoveScore = evalWhiteMove(this)
-    // const blackMoveScore = evalBlackMove(this)
-    const whiteMoveScore = 0
-    const blackMoveScore = 0
-    if (this.side === 0) {
-      return whiteScore - blackScore + whiteMoveScore - blackMoveScore
-    } else {
-      return blackScore - whiteScore + blackMoveScore - whiteMoveScore
+  evaluate(side = null) {
+    if (side === 0) {
+      return this.whiteScore
+    } else if (side === 1) {
+      return this.blackScore
     }
+
+    if (this.side === 0) {
+      return this.whiteScore - this.blackScore
+    } else {
+      return this.blackScore - this.whiteScore
+    }
+  }
+
+  get nullOk() {
+    return this.evaluate(this.side) >= nullOkMargin
+  }
+
+  get nullSafe() {
+    return this.evaluate(this.side) >= nullSafeMargin
+  }
+
+  get whiteScore() {
+    let score = this.scoreStack[this.scoreStack.length - 1][0]
+    if (score == null) {
+      const whiteMoveScore = 0
+      score = evalWhite(this) - whiteMoveScore
+      this.scoreStack[this.scoreStack.length - 1][0] = score
+    }
+    return score
+  }
+
+  get blackScore() {
+    let score = this.scoreStack[this.scoreStack.length - 1][1]
+    if (score == null) {
+      const blackMoveScore = 0
+      score = evalBlack(this) - blackMoveScore
+      this.scoreStack[this.scoreStack.length - 1][1] = score
+    }
+    return score
   }
 
   fenToBoard(fen) {
@@ -465,15 +502,13 @@ class Pos {
     this.sideTag = 16 + this.side * 16
 
     //初始化局面的zobrist
-    this.zobrist = this.board.reduce((zobrist, piece, index) => {
+    this.zobristStack = [this.board.reduce((zobrist, piece, index) => {
       if (piece) {
         return zobrist.xor(zobristTable[this.side][PieceNumToType[piece]][index])
       } else {
         return zobrist
       }
-    }, new ZobristNode())
-
-    this.zobristStack = [this.zobrist]
+    }, new ZobristNode())]
     this.checkStack = [this.isChecking()]
     this.moveStack = []
     //0是红方，1是黑方

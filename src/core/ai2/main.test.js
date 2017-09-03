@@ -6,6 +6,10 @@ const { Move } = require('./util')
 const { checkmatedValue } = require('./evaluate')
 const { HashTable, hashAlpha, hashBeta, hashExact } = require('./hashtable')
 
+const { fens } = require('./testData')
+
+const nullDepth = 2
+
 class Sg_searchNode {
   constructor(counter = 0, alphaNodes = 0, betaNodes = 0, pvNodes = 0, evalNodes = 0, hashNodes = 0, deadNodes = 0) {
     this.counter = counter
@@ -15,20 +19,9 @@ class Sg_searchNode {
     this.evalNodes = evalNodes
     this.hashNodes = hashNodes
     this.deadNodes = deadNodes
+    this.moves = []
   }
 }
-
-//开局
-const fen1 = 'r1bakabr1/9/1cn3n1c/p1p1p1R1p/6p2/2P6/P3P1P1P/1C2C1N2/9/RNBAKAB2 b'
-
-//中局
-const fen2 = '2bakab2/9/1c2c1n2/p5p1p/2P4R1/1C2p1P2/P3Pr2P/2N1BC3/4A4/3K1AB2 b'
-
-//残局
-const fen3 = '9/2P6/3k5/4c4/2b6/9/4N4/8B/3n1p3/3K5 b'
-
-//strange
-const fen4 = 'r1bakab1r/9/2n1c1nc1/p1p1p1p1p/9/9/P1P1P1P1P/1C4N1C/9/RNBAKABR1 w'
 
 function MinMaxTest(sg_searchNode, pos, maxDepth) {
   let resultMove = null
@@ -68,7 +61,7 @@ function MinMaxTest(sg_searchNode, pos, maxDepth) {
     return bestScore
   })(maxDepth)
 
-  return resultMove
+  return { resultMove, score }
 }
 
 function AlphaBeta(initialAlpha = -Infinity, initialBeta = Infinity, sg_searchNode, pos, maxDepth) {
@@ -141,7 +134,7 @@ function AlphaBeta(initialAlpha = -Infinity, initialBeta = Infinity, sg_searchNo
     return alpha
   })(initialAlpha, initialBeta, maxDepth)
 
-  return resultMove
+  return { resultMove, score }
 }
 
 function AlphaBetaWithHashTable(initialAlpha = -Infinity, initialBeta = Infinity, sg_searchNode, pos, maxDepth) {
@@ -162,7 +155,7 @@ function AlphaBetaWithHashTable(initialAlpha = -Infinity, initialBeta = Infinity
     if (depth <= 0) {
       sg_searchNode.evalNodes++
       const eval = pos.evaluate()
-      hashTable.saveHashTable(zobrist, eval, depth, hashExact, null)
+      hashTable.saveHashTable(zobrist, eval, depth, hashExact, null, pos.moveStack.length)
       return eval
     }
 
@@ -181,7 +174,7 @@ function AlphaBetaWithHashTable(initialAlpha = -Infinity, initialBeta = Infinity
         pos.unMakeMove()
 
         if (score >= beta) {
-          hashTable.saveHashTable(zobrist, beta, depth, hashBeta, bestMove)
+          hashTable.saveHashTable(zobrist, beta, depth, hashBeta, bestMove, pos.moveStack.length)
           sg_searchNode.betaNodes++
           return beta
         }
@@ -202,10 +195,10 @@ function AlphaBetaWithHashTable(initialAlpha = -Infinity, initialBeta = Infinity
     //是否低于alpha边界
     if (alphaFlag === 0) {
       sg_searchNode.alphaNodes++
-      hashTable.saveHashTable(zobrist, alpha, depth, hashAlpha, bestMove)
+      hashTable.saveHashTable(zobrist, alpha, depth, hashAlpha, bestMove, pos.moveStack.length)
     } else {
       sg_searchNode.pvNodes++
-      hashTable.saveHashTable(zobrist, alpha, depth, hashExact, bestMove)
+      hashTable.saveHashTable(zobrist, alpha, depth, hashExact, bestMove, pos.moveStack.length)
     }
 
     //没有走任何棋
@@ -218,7 +211,7 @@ function AlphaBetaWithHashTable(initialAlpha = -Infinity, initialBeta = Infinity
     return alpha
   })(initialAlpha, initialBeta, maxDepth)
 
-  return resultMove
+  return { resultMove, score }
 }
 
 function AlphaBetaWithHashTable2(initialAlpha = -Infinity, initialBeta = Infinity, sg_searchNode, pos, maxDepth) {
@@ -239,7 +232,7 @@ function AlphaBetaWithHashTable2(initialAlpha = -Infinity, initialBeta = Infinit
     if (depth <= 0) {
       sg_searchNode.evalNodes++
       const eval = pos.evaluate()
-      hashTable.saveHashTable(zobrist, eval, depth, hashExact, null)
+      hashTable.saveHashTable(zobrist, eval, depth, hashExact, null, pos.moveStack.length)
       return eval
     }
 
@@ -260,7 +253,7 @@ function AlphaBetaWithHashTable2(initialAlpha = -Infinity, initialBeta = Infinit
         pos.unMakeMove()
 
         if (score >= beta) {
-          hashTable.saveHashTable(zobrist, score, depth, hashBeta, bestMove)
+          hashTable.saveHashTable(zobrist, score, depth, hashBeta, bestMove, pos.moveStack.length)
           sg_searchNode.betaNodes++
           return beta
         }
@@ -291,17 +284,17 @@ function AlphaBetaWithHashTable2(initialAlpha = -Infinity, initialBeta = Infinit
       //是否低于alpha边界
       if (alphaFlag === 0) {
         sg_searchNode.alphaNodes++
-        hashTable.saveHashTable(zobrist, bestScore, depth, hashAlpha, bestMove)
+        hashTable.saveHashTable(zobrist, bestScore, depth, hashAlpha, bestMove, pos.moveStack.length)
       } else {
         sg_searchNode.pvNodes++
-        hashTable.saveHashTable(zobrist, alpha, depth, hashExact, bestMove)
+        hashTable.saveHashTable(zobrist, alpha, depth, hashExact, bestMove, pos.moveStack.length)
       }
     }
 
     return bestScore
   })(initialAlpha, initialBeta, maxDepth)
 
-  return resultMove
+  return { resultMove, score }
 }
 
 function sortedMoveHashTable(initialAlpha = -Infinity, initialBeta = Infinity, sg_searchNode, pos, maxDepth) {
@@ -351,7 +344,7 @@ function sortedMoveHashTable(initialAlpha = -Infinity, initialBeta = Infinity, s
 
       // 历史表排序不吃子走法
       else {
-        const gap = historyTable[move1.to][move1.from] - historyTable[move2.to][move2.from]
+        const gap = historyTable[move1.from][move1.to] - historyTable[move2.from][move2.to]
         return gap > 0 ? -1 : gap === 0 ? 0 : 1
       }
     }
@@ -389,7 +382,7 @@ function sortedMoveHashTable(initialAlpha = -Infinity, initialBeta = Infinity, s
     if (hashScore != null) {
       //2.1 找到了可用的得分
       if (typeof hashScore === 'number') {
-        // return hashScore
+        return hashScore
       }
       //2.2 找到了可用的置换表走法
       else if (hashScore instanceof Move) {
@@ -400,7 +393,7 @@ function sortedMoveHashTable(initialAlpha = -Infinity, initialBeta = Infinity, s
     if (depth <= 0) {
       sg_searchNode.evalNodes++
       const eval = pos.evaluate()
-      hashTable.saveHashTable(zobrist, eval, depth, hashExact, null)
+      hashTable.saveHashTable(zobrist, eval, depth, hashExact, null, pos.moveStack.length)
       return eval
     }
 
@@ -424,7 +417,7 @@ function sortedMoveHashTable(initialAlpha = -Infinity, initialBeta = Infinity, s
 
         if (score >= beta) {
           saveGoodMove(move, depth, pos.moveStack.length)
-          hashTable.saveHashTable(zobrist, score, depth, hashBeta, bestMove)
+          hashTable.saveHashTable(zobrist, score, depth, hashBeta, bestMove, pos.moveStack.length)
 
           sg_searchNode.betaNodes++
           return score
@@ -456,18 +449,18 @@ function sortedMoveHashTable(initialAlpha = -Infinity, initialBeta = Infinity, s
       //是否低于alpha边界
       if (alphaFlag === 0) {
         sg_searchNode.alphaNodes++
-        hashTable.saveHashTable(zobrist, bestScore, depth, hashAlpha, bestMove)
+        hashTable.saveHashTable(zobrist, bestScore, depth, hashAlpha, bestMove, pos.moveStack.length)
       } else {
         sg_searchNode.pvNodes++
         saveGoodMove(bestMove, depth, pos.moveStack.length)
-        hashTable.saveHashTable(zobrist, alpha, depth, hashExact, bestMove)
+        hashTable.saveHashTable(zobrist, alpha, depth, hashExact, bestMove, pos.moveStack.length)
       }
     }
 
     return bestScore
   })(initialAlpha, initialBeta, maxDepth)
 
-  return resultMove
+  return { resultMove, score }
 }
 
 function iterateSortedHashTable(initialAlpha = -Infinity, initialBeta = Infinity, sg_searchNode, pos, maxDepth) {
@@ -517,7 +510,7 @@ function iterateSortedHashTable(initialAlpha = -Infinity, initialBeta = Infinity
 
       // 历史表排序不吃子走法
       else {
-        const gap = historyTable[move1.to][move1.from] - historyTable[move2.to][move2.from]
+        const gap = historyTable[move1.from][move1.to] - historyTable[move2.from][move2.to]
         return gap > 0 ? -1 : gap === 0 ? 0 : 1
       }
     }
@@ -559,7 +552,7 @@ function iterateSortedHashTable(initialAlpha = -Infinity, initialBeta = Infinity
     if (depth <= 0) {
       sg_searchNode.evalNodes++
       const eval = pos.evaluate()
-      hashTable.saveHashTable(zobrist, eval, depth, hashExact, null)
+      hashTable.saveHashTable(zobrist, eval, depth, hashExact, null, pos.moveStack.length)
       return eval
     }
 
@@ -583,7 +576,7 @@ function iterateSortedHashTable(initialAlpha = -Infinity, initialBeta = Infinity
 
         if (score >= beta) {
           saveGoodMove(move, depth, pos.moveStack.length)
-          hashTable.saveHashTable(zobrist, score, depth, hashBeta, bestMove)
+          hashTable.saveHashTable(zobrist, score, depth, hashBeta, bestMove, pos.moveStack.length)
 
           sg_searchNode.betaNodes++
           return beta
@@ -615,27 +608,29 @@ function iterateSortedHashTable(initialAlpha = -Infinity, initialBeta = Infinity
       //是否低于alpha边界
       if (alphaFlag === 0) {
         sg_searchNode.alphaNodes++
-        hashTable.saveHashTable(zobrist, bestScore, depth, hashAlpha, bestMove)
+        hashTable.saveHashTable(zobrist, bestScore, depth, hashAlpha, bestMove, pos.moveStack.length)
       } else {
         sg_searchNode.pvNodes++
         saveGoodMove(bestMove, depth, pos.moveStack.length)
-        hashTable.saveHashTable(zobrist, alpha, depth, hashExact, bestMove)
+        hashTable.saveHashTable(zobrist, alpha, depth, hashExact, bestMove, pos.moveStack.length)
       }
     }
 
     return alpha
   }
 
+  let score
+
   for (let depth = 1; depth <= maxDepth; depth++) {
-    AlphaBeta(initialAlpha, initialBeta, maxDepth)
+    score = AlphaBeta(initialAlpha, initialBeta, maxDepth)
   }
 
-  return resultMove
+  return { resultMove, score }
 }
 
 function PVS(initialAlpha = -Infinity, initialBeta = Infinity, sg_searchNode, pos, maxDepth) {
   let resultMove = null
-
+  const nullDepth = 2
   //置换表
   const hashTable = new HashTable()
   //历史表(historyTable[from][to])
@@ -680,7 +675,7 @@ function PVS(initialAlpha = -Infinity, initialBeta = Infinity, sg_searchNode, po
 
       // 历史表排序不吃子走法
       else {
-        const gap = historyTable[move1.to][move1.from] - historyTable[move2.to][move2.from]
+        const gap = historyTable[move1.from][move1.to] - historyTable[move2.from][move2.to]
         return gap > 0 ? -1 : gap === 0 ? 0 : 1
       }
     }
@@ -707,12 +702,13 @@ function PVS(initialAlpha = -Infinity, initialBeta = Infinity, sg_searchNode, po
   }
 
 
-  const score = (function helper(alpha, beta, depth) {
+  const score = (function helper(alpha, beta, depth, noNull = false) {
     const zobrist = pos.zobrist
     const ply = pos.moveStack.length
+    const nullDepth = 2
 
     //获得之前的值
-    const previousScore = hashTable.readHashTable(zobrist, depth, alpha, beta, pos.moveStack.length)
+    const previousScore = hashTable.readHashTable(zobrist, depth, alpha, beta, ply)
     if (typeof previousScore === 'number') {
       sg_searchNode.hashNodes++
       return previousScore
@@ -722,9 +718,10 @@ function PVS(initialAlpha = -Infinity, initialBeta = Infinity, sg_searchNode, po
     if (depth <= 0) {
       sg_searchNode.evalNodes++
       const eval = pos.evaluate()
-      hashTable.saveHashTable(zobrist, eval, depth, hashExact, null)
+      hashTable.saveHashTable(zobrist, eval, depth, hashExact, null, ply)
       return eval
     }
+
 
     sg_searchNode.counter++
 
@@ -736,7 +733,7 @@ function PVS(initialAlpha = -Infinity, initialBeta = Infinity, sg_searchNode, po
     //是否一步也没走
     let unMoveFlag = 1
 
-    const moves = pos.generateMoves().sort(sortingMoves(lastGoodMv, pos.moveStack.length))
+    const moves = pos.generateMoves().sort(sortingMoves(lastGoodMv, ply))
 
     //至少要走完一步棋
     let pvFlag = false
@@ -755,11 +752,12 @@ function PVS(initialAlpha = -Infinity, initialBeta = Infinity, sg_searchNode, po
         } else {
           score = -helper(-beta, -alpha, depth - 1)
         }
+        // score = -helper(-beta, -alpha, depth - 1)
         pos.unMakeMove()
 
         if (score >= beta) {
-          saveGoodMove(move, depth, pos.moveStack.length)
-          hashTable.saveHashTable(zobrist, score, depth, hashBeta, bestMove)
+          saveGoodMove(move, depth, ply)
+          hashTable.saveHashTable(zobrist, score, depth, hashBeta, bestMove, ply)
 
           sg_searchNode.betaNodes++
           return score
@@ -786,31 +784,31 @@ function PVS(initialAlpha = -Infinity, initialBeta = Infinity, sg_searchNode, po
     //没有走任何棋
     if (unMoveFlag) {
       sg_searchNode.deadNodes++
-      hashTable.saveHashTable(zobrist, pos.moveStack.length - checkmatedValue, depth, hashExact, null, pos.moveStack.length)
-      return pos.moveStack.length - checkmatedValue
+      hashTable.saveHashTable(zobrist, ply - checkmatedValue, depth, hashExact, null, ply)
+      return ply - checkmatedValue
     } else {
       //是否低于alpha边界
       if (alphaFlag === 0) {
         sg_searchNode.alphaNodes++
-        hashTable.saveHashTable(zobrist, bestScore, depth, hashAlpha, bestMove)
+        hashTable.saveHashTable(zobrist, bestScore, depth, hashAlpha, bestMove, ply)
       } else {
         sg_searchNode.pvNodes++
-        saveGoodMove(bestMove, depth, pos.moveStack.length)
-        hashTable.saveHashTable(zobrist, alpha, depth, hashExact, bestMove)
+        saveGoodMove(bestMove, depth, ply)
+        hashTable.saveHashTable(zobrist, alpha, depth, hashExact, bestMove, ply)
       }
     }
 
     return bestScore
   })(initialAlpha, initialBeta, maxDepth)
 
-  return resultMove
+  return { resultMove, score }
 }
 
 function main(fileName, func, maxDepth = 7) {
   let resultInfo = ''
   const name = ['开局', '中局', '残局'];
 
-  [fen1, fen2, fen3, fen4].forEach((fen, index) => {
+  fens.forEach((fen, index) => {
     const pos = new Pos(fen)
 
     if (name[index]) {
@@ -823,7 +821,9 @@ function main(fileName, func, maxDepth = 7) {
       const sg_searchNode = new Sg_searchNode()
 
       const start = Date.now()
-      const move = func(sg_searchNode, pos, i)
+      const moveInfo = func(sg_searchNode, pos, i)
+      const move = moveInfo.resultMove
+      const score = moveInfo.score
       const end = Date.now()
 
       if (move) {
@@ -831,6 +831,7 @@ function main(fileName, func, maxDepth = 7) {
         if (move.capture) {
           resultInfo += `, capture = ${move.capture}`
         }
+        resultInfo += `\n得分为： ${score}`
       } else {
         resultInfo += `depth = ${i}, bestMove = null, because computer is checked in this depth`
       }
@@ -867,23 +868,20 @@ function NullMoveAlphaBeta(initialAlpha = -Infinity, initialBeta = Infinity, sg_
   let nullDepth = 2
   let time = 0
 
-  const nullOkMargin = 200
-  const nullSafeMargin = 400
-  const score = (function helper(alpha, beta, depth, nullMove = true) {
+  const score = (function helper(alpha, beta, depth, noNull = false) {
     if (depth <= 0) {
       sg_searchNode.evalNodes++
       return pos.evaluate()
     }
 
-    //执行空着，但不能连续两次执行空着
-    if (!nullMove && !pos.isCheck()) {
+    //执行空着，但不能连续两次执行空着,深度必须大于等于1，否则就退化成单纯的局面评估了
+    if (!noNull && depth - 1 - nullDepth > 0 && pos.nullOk && pos.makeEmptyMove()) {
       //执行空着
-      pos.makeEmptyMove()
       const nullScore = -helper(-beta, -beta + 1, depth - 1 - nullDepth, true)
       pos.unMakeEmptyMove()
 
       //我认为beta-1到beta就足够验证了，但其他人这里设的是alpha，beta
-      if (nullScore >= beta && helper(beta - 1, beta, depth - nullDepth, true) >= beta) {
+      if (nullScore >= beta && (pos.nullSafe || helper(beta - 1, beta, depth - nullDepth, true) >= beta)) {
         return nullScore
       }
     }
@@ -944,16 +942,44 @@ function NullMoveAlphaBeta(initialAlpha = -Infinity, initialBeta = Infinity, sg_
     return bestScore
   })(initialAlpha, initialBeta, maxDepth)
 
-  return resultMove
+  return { resultMove, score }
 }
 
-// main('MinMax_test_result', MinMaxTest, 1)
-main('AlphaBeta_test_result', AlphaBeta.bind(null, -Infinity, Infinity), 5)
-main('NullMoveAlphaBeta_test_result', NullMoveAlphaBeta.bind(null, -Infinity, Infinity), 5)
-// main('AlphaBetaWithHashTable_test_result', AlphaBetaWithHashTable.bind(null, -Infinity, Infinity), 4)
-// main('AlphaBetaWithHashTable2_test_result', AlphaBetaWithHashTable2.bind(null, -Infinity, Infinity), 4)
-// main('sortedMoveHashTable_test_result', sortedMoveHashTable.bind(null, -Infinity, Infinity), 4)
+
+fens.forEach((fen) => {
+  for (let i = 1; i <= 5; i++) {
+    const pvsResult = PVS(-Infinity, Infinity, new Sg_searchNode(), new Pos(fen), i)
+    // const nullMoveResult = NullMoveAlphaBeta(-Infinity, Infinity, new Sg_searchNode(), new Pos(fen), i)
+    // const alphabetaResult = AlphaBeta(-Infinity, Infinity, new Sg_searchNode(), new Pos(fen), i)
+    const sortedMoveHashTableResult = sortedMoveHashTable(-Infinity, Infinity, new Sg_searchNode(), new Pos(fen), i)
+    try {
+      console.assert(pvsResult.score === sortedMoveHashTableResult.score)
+      // console.assert(nullMoveResult.score === alphabetaResult.score)
+    } catch (err) {
+      console.log(i)
+      console.log(pvsResult)
+      // console.log(nullMoveResult)
+      console.log(sortedMoveHashTableResult)
+      console.log('失败')
+      throw err
+    }
+  }
+})
+// const pos = new Pos(fen1)
+// pos.changeSide()
+
+// console.log(PVS(-Infinity, Infinity, new Sg_searchNode(), pos, 2))
+
+
+// main('MinMax_test_result', MinMaxTest, 4)
+// main('AlphaBeta_test_result', AlphaBeta.bind(null, -Infinity, Infinity), 5)
+// main('NullMoveAlphaBeta_test_result', NullMoveAlphaBeta.bind(null, -Infinity, Infinity), 5)
+// main('AlphaBetaWithHashTable_test_result', AlphaBetaWithHashTable.bind(null, -Infinity, Infinity), 5)
+// main('AlphaBetaWithHashTable2_test_result', AlphaBetaWithHashTable2.bind(null, -Infinity, Infinity), 5)
+// main('sortedMoveHashTable_test_result', sortedMoveHashTable.bind(null, -Infinity, Infinity), 5)
 // main('PVS_test_result', PVS.bind(null, -Infinity, Infinity), 7)
+
+
 
 // console.log(AlphaBeta(-Infinity, Infinity, new Sg_searchNode(), new Pos('r1bakabn1/3r5/1cn4c1/p1p1p1p1p/9/2P6/P3P1P1P/1CNC5/4A4/R1BAK1BNR b'), 5))
 // console.log(MinMaxTest(new Sg_searchNode(),new Pos('1nbakabnr/r8/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/2N1C2C1/9/R1BAKABNR b'),5))

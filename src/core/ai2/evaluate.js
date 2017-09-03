@@ -402,6 +402,8 @@ exports.checkmatedValue = 1000000
 exports.winValue = exports.checkmatedValue - exports.maxDepth
 exports.banValue = exports.checkmatedValue - exports.maxDepth + 100
 exports.drawValue = 20
+exports.nullOkMargin = 200
+exports.nullSafeMargin = 400
 
 
 // const PositionValues = 

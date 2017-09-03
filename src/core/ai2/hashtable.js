@@ -121,6 +121,8 @@ class HashTable {
   //其中downwardDepth是当前局面到搜索到的最后一层的高度，ply是根节点到当前节点的高度,ply只对将军有用，不保存
   saveHashTable(newZobristNode, value, downwardDepth, flag, goodMove, ply = 0) {
     if (value < -winValue) {
+      // console.log(value)
+      // console.log(ply)
       value = value - ply
     } else if (value > winValue) {
       value = value + ply
@@ -157,7 +159,6 @@ class HashTable {
 
       //置换表里高度更高
       if (currentDownwardDepth <= downwardDepth) {
-
         //是确定的值
         if (flag === hashExact) {
           return value
