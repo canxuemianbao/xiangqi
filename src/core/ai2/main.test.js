@@ -88,11 +88,8 @@ function AlphaBeta(initialAlpha = -Infinity, initialBeta = Infinity, sg_searchNo
     for (let move of pos.generateMoves()) {
       if (pos.makeMove(move)) {
         unMoveFlag = 0
-        let newDepth = depth - 1
-        if (pos.isChecking()) {
-          newDepth = depth
-        }
         const score = -helper(-beta, -alpha, depth - 1)
+
         pos.unMakeMove()
 
         if (score >= beta) {
@@ -984,8 +981,9 @@ fens.forEach((fen) => {
 // console.log(AlphaBeta(-Infinity, Infinity, new Sg_searchNode(), new Pos('r1bakabn1/3r5/1cn4c1/p1p1p1p1p/9/2P6/P3P1P1P/1CNC5/4A4/R1BAK1BNR b'), 5))
 // console.log(MinMaxTest(new Sg_searchNode(),new Pos('1nbakabnr/r8/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/2N1C2C1/9/R1BAKABNR b'),5))
 
-// console.log(NullMoveAlphaBeta(-Infinity, Infinity, new Sg_searchNode(), new Pos(), 5))
+// console.log(PVS(-Infinity, Infinity, new Sg_searchNode(), new Pos(fen2), 4))
 
-// console.log(sortedMoveHashTable(-Infinity, Infinity, new Sg_searchNode(), new Pos(fen1), 4))
+
+// console.log(sortedMoveHashTable(-Infinity, Infinity, new Sg_searchNode(), new Pos(fen2), 4))
 
 // main('iterateSortedHashTable', iterateSortedHashTable.bind(null, -Infinity, Infinity), 4)

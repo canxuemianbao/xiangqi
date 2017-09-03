@@ -172,10 +172,6 @@ class Pos {
     }
   }
 
-  isRepValue(value) {
-    return value === banValue || value === -banValue || value === drawValue || value === -drawValue
-  }
-
   repStatus() {
     let checkIndex = this.checkStack.length - 2
     let zobristIndex = this.zobristStack.length - 2
@@ -226,10 +222,15 @@ class Pos {
     return this.canAttack(opponentKingPos, sideTag)
   }
 
+  addPiece(pos, pc) {
+    this.board[pos] = pc
+    this.piece[pc] = pos
+  }
+
   isChecking() {
-    this.changeSide()
+    this.makeEmptyMove()
     const isChecking = this.isCheck()
-    this.changeSide()
+    this.unMakeEmptyMove()
     return isChecking
   }
 
@@ -302,6 +303,7 @@ class Pos {
   }
 
   unMakeEmptyMove() {
+    //弹出上一个zobrist值
     this.zobristStack.pop()
     this.moveStack.pop()
     this.checkStack.pop()
@@ -472,11 +474,6 @@ class Pos {
 
     this.clearBoard()
 
-    const addPiece = (pos, pc) => {
-      this.board[pos] = pc
-      this.piece[pc] = pos
-    }
-
     let row = 3, column = 3
     Array.from(fenInfo[0]).forEach((fenChar) => {
       if (fenChar === '/') {
@@ -490,7 +487,7 @@ class Pos {
           pc[piece] = 0
         }
 
-        addPiece((row << 4) + column, pc[piece] + piece)
+        this.addPiece((row << 4) + column, pc[piece] + piece)
 
         column++
         pc[piece]++
@@ -511,8 +508,6 @@ class Pos {
     }, new ZobristNode())]
     this.checkStack = [this.isChecking()]
     this.moveStack = []
-    //0是红方，1是黑方
-    this.scoreStack = [[]]
   }
 }
 
