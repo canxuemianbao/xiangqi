@@ -706,11 +706,13 @@ function PVS(initialAlpha = -Infinity, initialBeta = Infinity, sg_searchNode, po
 
     //获得之前的值
     const previousScore = hashTable.readHashTable(zobrist, depth, alpha, beta, ply)
+    let lastGoodMv
     if (typeof previousScore === 'number') {
       sg_searchNode.hashNodes++
       return previousScore
+    } else if (previousScore instanceof Move) {
+      lastGoodMv = previousScore
     }
-    const lastGoodMv = previousScore
 
     if (depth <= 0) {
       sg_searchNode.evalNodes++
@@ -746,6 +748,7 @@ function PVS(initialAlpha = -Infinity, initialBeta = Infinity, sg_searchNode, po
           if (score > alpha && score < beta) {
             score = -helper(-beta, -alpha, depth - 1)
           }
+          // score = -helper(-beta, -alpha, depth - 1)  
         } else {
           score = -helper(-beta, -alpha, depth - 1)
         }
@@ -943,29 +946,73 @@ function NullMoveAlphaBeta(initialAlpha = -Infinity, initialBeta = Infinity, sg_
 }
 
 
-fens.forEach((fen) => {
-  for (let i = 1; i <= 5; i++) {
-    const pvsResult = PVS(-Infinity, Infinity, new Sg_searchNode(), new Pos(fen), i)
-    // const nullMoveResult = NullMoveAlphaBeta(-Infinity, Infinity, new Sg_searchNode(), new Pos(fen), i)
-    // const alphabetaResult = AlphaBeta(-Infinity, Infinity, new Sg_searchNode(), new Pos(fen), i)
-    const sortedMoveHashTableResult = sortedMoveHashTable(-Infinity, Infinity, new Sg_searchNode(), new Pos(fen), i)
-    try {
-      console.assert(pvsResult.score === sortedMoveHashTableResult.score)
-      // console.assert(nullMoveResult.score === alphabetaResult.score)
-    } catch (err) {
-      console.log(i)
-      console.log(pvsResult)
-      // console.log(nullMoveResult)
-      console.log(sortedMoveHashTableResult)
-      console.log('失败')
-      throw err
+function compareTest(maxDepth = 4) {
+  const correctFuncs = [MinMaxTest, AlphaBeta]
+
+  const testFuncs = [AlphaBetaWithHashTable, AlphaBetaWithHashTable2, sortedMoveHashTable, PVS]
+
+  function isCorrect(fen, depth, func) {
+    return func(-Infinity, Infinity, new Sg_searchNode(), new Pos(fen), depth).score === correctFuncs[1](-Infinity, Infinity, new Sg_searchNode(), new Pos(fen), depth).score
+  }
+
+  const errorCases = []
+
+  for (let fenIndex = 0; fenIndex < fens.length; fenIndex++) {
+    for (let depth = 1; depth <= maxDepth; depth++) {
+      for (let funcIndex = 0; funcIndex < testFuncs.length; funcIndex++) {
+        if (!isCorrect(fens[fenIndex], depth, testFuncs[funcIndex])) {
+          errorCases.push({ fenIndex, depth, funcIndex })
+        }
+      }
     }
   }
-})
-// const pos = new Pos(fen1)
-// pos.changeSide()
 
-// console.log(PVS(-Infinity, Infinity, new Sg_searchNode(), pos, 2))
+  errorCases.sort(function (case1, case2) {
+    if (case1.funcIndex === case2.funcIndex) {
+      if (case1.depth === case2.depth) {
+        if (case1.fenIndex === case2.fenIndex) {
+          return 0
+        }
+        return case1.fenIndex - case2.fenIndex
+      }
+      return case1.depth - case2.depth
+    }
+    return case1.funcIndex - case2.funcIndex
+  })
+
+  if (errorCases.length) {
+    const { fenIndex, depth, funcIndex } = errorCases[0]
+
+    const fen = fens[fenIndex]
+    const func = testFuncs[funcIndex]
+
+    if (correctFuncs[0](new Sg_searchNode(), new Pos(fen), depth).score === correctFuncs[1](-Infinity, Infinity, new Sg_searchNode(), new Pos(fen), depth).score) {
+      console.log('失败的函数为：' + func.name)
+      console.log('失败的层数为：' + depth)
+      console.log('失败的fen为：' + fen)
+      const failResult = func(-Infinity, Infinity, new Sg_searchNode(), new Pos(fen), depth)
+      console.log('失败的结果为：' + failResult.resultMove)
+      console.log('失败的得分为：' + failResult.score)
+      const shouldResult = correctFuncs[1](-Infinity, Infinity, new Sg_searchNode(), new Pos(fen), depth)
+      console.log('应该的结果为：' + shouldResult.resultMove)
+      console.log('应该的得分为：' + shouldResult.score)
+    } else {
+      console.log('alphabeta失败')
+    }
+  }else{
+    console.log('成功')
+  }
+}
+
+compareTest()
+
+// const pos = new Pos(fens[6])
+// pos.changeSide()
+// console.log('AlphaBeta')
+// console.log(AlphaBeta(-Infinity, Infinity, new Sg_searchNode(), pos, 1))
+// console.log('AlphaBetaWithHashTable')
+// console.log(AlphaBetaWithHashTable(-Infinity, Infinity, new Sg_searchNode(), pos, 1))
+
 
 
 // main('MinMax_test_result', MinMaxTest, 4)
@@ -978,7 +1025,7 @@ fens.forEach((fen) => {
 
 
 
-// console.log(AlphaBeta(-Infinity, Infinity, new Sg_searchNode(), new Pos('r1bakabn1/3r5/1cn4c1/p1p1p1p1p/9/2P6/P3P1P1P/1CNC5/4A4/R1BAK1BNR b'), 5))
+
 // console.log(MinMaxTest(new Sg_searchNode(),new Pos('1nbakabnr/r8/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/2N1C2C1/9/R1BAKABNR b'),5))
 
 // console.log(PVS(-Infinity, Infinity, new Sg_searchNode(), new Pos(fen2), 4))

@@ -1,4 +1,4 @@
-const { ComputerThinkTimer, AlphaBeta, checkmatedValue } = require('./search')
+const { ComputerThinkTimer, MinMax, checkmatedValue } = require('./search')
 
 function search(pos) {
   const start = Date.now()

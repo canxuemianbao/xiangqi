@@ -124,7 +124,7 @@ class ChessboardInterface {
     this.game.makeMove(move)
 
     this.display()
-    if (this.game.isChecking()) {
+    if (this.game.isChecked()) {
       toastr.warning('将军')
     }
     setTimeout(this.considerMove.bind(this), 500)

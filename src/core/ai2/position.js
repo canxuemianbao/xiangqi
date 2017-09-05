@@ -202,7 +202,8 @@ class Pos {
     return 0
   }
 
-  isCheck() {
+  //当前回合棋子能否将到对面棋子
+  canCheck() {
     const wKingPos = this.piece[16]
     const bKingPos = this.piece[32]
 
@@ -227,11 +228,12 @@ class Pos {
     this.piece[pc] = pos
   }
 
-  isChecking() {
-    this.makeEmptyMove()
-    const isChecking = this.isCheck()
-    this.unMakeEmptyMove()
-    return isChecking
+  //当前颜色的将是否正在被将军
+  isChecked() {
+    this.changeSide()
+    const isChecked = this.canCheck()
+    this.changeSide()
+    return isChecked
   }
 
   changeSide() {
@@ -288,32 +290,26 @@ class Pos {
     return this.zobristStack[this.zobristStack.length - 1]
   }
 
-  makeEmptyMove() {
-    this.moveStack.push(null)
-    this.zobristStack.push(this.zobrist.xor(zobristSide))
-    this.checkStack.push(this.isCheck())
-    this.scoreStack.push([])
-    this.changeSide()
+  // makeEmptyMove() {
+  //   this.moveStack.push(null)
+  //   this.zobristStack.push(this.zobrist.xor(zobristSide))
+  //   this.checkStack.push(this.canCheck())
+  //   this.changeSide()
 
-    if (this.isCheck()) {
-      this.unMakeEmptyMove()
-      return false
-    }
-    return true
-  }
+  //   if (this.canCheck()) {
+  //     this.unMakeEmptyMove()
+  //     return false
+  //   }
+  //   return true
+  // }
 
-  unMakeEmptyMove() {
-    //弹出上一个zobrist值
-    this.zobristStack.pop()
-    this.moveStack.pop()
-    this.checkStack.pop()
-    this.scoreStack.pop()
-    this.changeSide()
-  }
-
-  updateMoveStack(move) {
-
-  }
+  // unMakeEmptyMove() {
+  //   //弹出上一个zobrist值
+  //   this.zobristStack.pop()
+  //   this.moveStack.pop()
+  //   this.checkStack.pop()
+  //   this.changeSide()
+  // }
 
   movePiece(move) {
     //存储移动的棋子
@@ -330,33 +326,10 @@ class Pos {
     if (move.capture) {
       const capturedPos = this.piece[move.capture]
       this.piece[move.capture] = 0
-
-      //改变zobrist值
-      const otherSide = this.side ? 0 : 1
-      newZobrist = newZobrist.xor(zobristTable[otherSide][PieceNumToType[move.capture]][move.to])
     }
-
-    //改变zobrist值
-    const pieceZobrist = zobristTable[this.side][PieceNumToType[movedPiece]][move.from]
-    const nextPieceZobrist = zobristTable[this.side][PieceNumToType[movedPiece]][move.to]
-    newZobrist = newZobrist.xor(pieceZobrist).xor(nextPieceZobrist).xor(zobristSide)
-
-    //存储zobrist值
-    this.zobristStack.push(newZobrist)
-
-    //存储是否将军
-    this.checkStack.push(this.isCheck())
-
-    this.scoreStack.push([])
   }
 
   unMovePiece() {
-    //弹出上一个zobrist值
-    this.zobristStack.pop()
-
-    //撤销将军判断
-    this.checkStack.pop()
-
     //撤销上一步
     const move = this.moveStack.pop()
 
@@ -373,24 +346,60 @@ class Pos {
       this.board[move.to] = move.capture
       this.piece[move.capture] = move.to
     }
-
-    this.scoreStack.pop()
   }
 
   makeMove(move) {
+    //1. 尝试着走一步 
     this.movePiece(move)
-    this.changeSide()
 
-    if (this.isCheck()) {
-      this.unMakeMove()
+    //2. 走了这一步后会被将军
+    if (this.isChecked()) {
+      //撤销这一步
+      this.unMovePiece()
       return false
     }
+    //3. 一步能走的棋
+    else {
+      //3.0 改变局面颜色
+      this.changeSide()
 
-    return true
+      const movedPiece = this.board[move.to]
+
+      //获得上一个移动棋子的颜色
+      const opponentSide = this.side?0:1
+
+      //3.1 改变zobrist值
+      const pieceZobrist = zobristTable[opponentSide][PieceNumToType[movedPiece]][move.from]
+      const nextPieceZobrist = zobristTable[opponentSide][PieceNumToType[movedPiece]][move.to]
+      let newZobrist = this.zobrist.xor(pieceZobrist).xor(nextPieceZobrist).xor(zobristSide)
+
+      //3.1.1 如果被吃子
+      if (move.capture) {
+        //zobrist里取消被吃掉的子
+        newZobrist = newZobrist.xor(zobristTable[this.side][PieceNumToType[move.capture]][move.to])
+      }
+
+      //3.1.2
+      this.zobristStack.push(newZobrist)
+
+      //3.2 判断当前局面是否被将军
+      this.checkStack.push(this.isChecked())
+
+      return true
+    }
   }
 
   unMakeMove() {
+    //1. 取消上一步
     this.unMovePiece()
+
+    //2. 弹出上一个zobrist值
+    this.zobristStack.pop()
+
+    //3. 撤销将军判断
+    this.checkStack.pop()
+
+    //4. 改变局面颜色
     this.changeSide()
   }
 
@@ -448,23 +457,21 @@ class Pos {
   }
 
   get whiteScore() {
-    let score = this.scoreStack[this.scoreStack.length - 1][0]
-    if (score == null) {
-      const whiteMoveScore = 0
-      score = evalWhite(this) - whiteMoveScore
-      this.scoreStack[this.scoreStack.length - 1][0] = score
-    }
+    const whiteMoveScore = 0
+    const score = evalWhite(this) - whiteMoveScore
     return score
   }
 
   get blackScore() {
-    let score = this.scoreStack[this.scoreStack.length - 1][1]
-    if (score == null) {
-      const blackMoveScore = 0
-      score = evalBlack(this) - blackMoveScore
-      this.scoreStack[this.scoreStack.length - 1][1] = score
-    }
+    const blackMoveScore = 0
+    const score = evalBlack(this) - blackMoveScore
     return score
+  }
+
+  initialState(){
+    this.moveStack = []
+    this.zobristStack = []
+    this.checkStack = []
   }
 
   fenToBoard(fen) {
@@ -473,6 +480,7 @@ class Pos {
     const fenInfo = fen.split(' ')
 
     this.clearBoard()
+    this.initialState()
 
     let row = 3, column = 3
     Array.from(fenInfo[0]).forEach((fenChar) => {
@@ -506,8 +514,7 @@ class Pos {
         return zobrist
       }
     }, new ZobristNode())]
-    this.checkStack = [this.isChecking()]
-    this.moveStack = []
+    this.checkStack = [this.isChecked()]
   }
 }
 

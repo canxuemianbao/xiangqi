@@ -182,7 +182,7 @@ function PVSQuiescentSearch(pos, finishTime, alpha = -Infinity, beta = Infinity)
   let moves = pos.generateMoves().sort(sortingMoves(hashMv, ply, quiescentHistoryTable))
 
   //5.1 是否被将军中
-  const isChecking = pos.isChecking()
+  const isChecked = pos.isChecked()
 
   //6. 搜索所有走法
 
@@ -200,7 +200,7 @@ function PVSQuiescentSearch(pos, finishTime, alpha = -Infinity, beta = Infinity)
       hasMove = true
 
       //如果正在被将军，走全部走法，如果没有被将军，走吃子走法
-      if (isChecking || move.capture) {
+      if (isChecked || move.capture) {
         let score
         if (!pvFlag) {
           score = -PVSQuiescentSearch(pos, finishTime, -beta, -alpha)
@@ -289,7 +289,7 @@ function QuiescentSearch(pos, alpha, beta) {
   let moves = pos.generateMoves()
 
   //5.1 是否被将军中
-  const isChecking = pos.isChecking()
+  const isChecked = pos.isChecked()
 
   //5.2 是否有棋可走，没有则被将死了
   let hasMove = false
@@ -300,7 +300,7 @@ function QuiescentSearch(pos, alpha, beta) {
       hasMove = true
 
       //如果正在被将军，走全部走法，如果没有被将军，走吃子走法
-      if (isChecking || move.capture) {
+      if (isChecked || move.capture) {
         const score = -QuiescentSearch(pos, -beta, -alpha)
         if (score >= beta) {
           pos.unMakeMove()
@@ -358,7 +358,6 @@ function PVS(pos, finishTime, alpha = -Infinity, beta = Infinity, depth, nullMov
   //3. 查看是否到达水平线,小于0是因为空步可能导致深度小于0
   if (depth <= 0) {
     const eval = PVSQuiescentSearch(pos, finishTime, alpha, beta)
-    // const eval = QuiescentSearch(pos,alpha,beta)
     // const eval = pos.evaluate()
     return eval
   }
