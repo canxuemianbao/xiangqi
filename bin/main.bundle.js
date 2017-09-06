@@ -45,18 +45,16 @@
 /***/ function(module, exports, __webpack_require__) {
 
 	const Game = __webpack_require__(1)
-	const { Bing, Pao, Che, Ma, Xiang, Shi, Shuai } = __webpack_require__(3)
+	const { Move } = __webpack_require__(9)
 	const ChessboardInterface = __webpack_require__(12)
-	const { Black, Red } = __webpack_require__(2)
 	const $ = __webpack_require__(15)
 
 	//'4kr3/9/5c3/5R3/9/4C4/9/9/6n2/5K3 w'
-	const game = new Game('4ka3/9/2N1b4/9/4r4/3R2B2/9/4B4/4A4/3AK4 b')
-
+	const game = new Game()
 	// game.setToOriginal()
 
 	window.onload = () => {
-	  const chessboardInterface = new ChessboardInterface(game, 1, 15, 15, 71, 71)
+	  const chessboardInterface = new ChessboardInterface(game, 0, 15, 15, 71, 71)
 	  let strangeNum = 0
 	}
 
@@ -3148,37 +3146,40 @@
 	  readHashTable(newZobristNode, currentDownwardDepth, currentAlpha, currentBeta, ply = 0) {
 	    const hashNode = this.hashTable[this._getIndex(newZobristNode)]
 
-	    //没找到对应的键
+	    //0. 没找到对应的键
 	    if (!hashNode) return
 
 	    const { zobristNode, value, downwardDepth, flag, mv } = hashNode
 
-	    //校验值相同
+	    //1. 校验值相同
 	    if (zobristNode && zobristNode.equal(newZobristNode)) {
-
-	      //将军的值肯定是exact值
-	      if (value < -winValue) {
-	        if (value >= -banValue) {
-	          return
+	      //2. 置换表高度不够深
+	      if (currentDownwardDepth > downwardDepth) {
+	        //如果是将军的值，那么就算不够深也是pv值
+	        if (flag === hashExact) {
+	          if (value < -winValue) {
+	            if (value >= -banValue) {
+	              return
+	            }
+	            return value + ply
+	          } else if (value > winValue) {
+	            if (value <= banValue) {
+	              return
+	            }
+	            return value - ply
+	          } else if (value === drawValue || value === -drawValue) {
+	            return
+	          }
 	        }
-	        return value + ply
-	      } else if (value > winValue) {
-	        if (value <= banValue) {
-	          return
-	        }
-	        return value - ply
-	      } else if (value === drawValue || value === -drawValue) {
-	        return
-	      }
-
-	      //置换表里高度更高
-	      if (currentDownwardDepth <= downwardDepth) {
-	        //是确定的值
+	      } 
+	      //3 置换表里深度更深
+	      else {
+	        //2.1 是确定的值
 	        if (flag === hashExact) {
 	          return value
 	        }
 
-	        //保存的是一个alpha值
+	        //2.2 保存的是一个alpha值
 	        else if (flag === hashAlpha) {
 	          //保存的alpha值若小于当前alpha值，就返回当前alpha值，因为pv值是小于保存的alpha值的，也小于当前alpha值
 	          if (currentAlpha >= value) {
@@ -3186,7 +3187,7 @@
 	          }
 	        }
 
-	        //保存的是一个beta值
+	        //2.3 保存的是一个beta值
 	        else if (flag === hashBeta) {
 	          //保存的beta值若大于当前beta值，就返回当前beta值，因为pv值是大于保存的beta值的，也大于当前beta值
 	          if (currentBeta <= value) {
@@ -3194,6 +3195,7 @@
 	          }
 	        }
 
+	        //2.4 没找到值，返回一个好的启发式走法
 	        return mv
 	      }
 	    }
@@ -3363,7 +3365,7 @@
 	    for (let i = 3; i <= 3 + row; i++) {
 	      for (let j = 3; j <= 3 + column; j++) {
 	        const coordinate = document.createElement('div')
-	        coordinate.className = `coordinate coordinate_${i - 3}_${j - 3}`
+	        coordinate.className = `coordinate coordinate_${i - 3}_${j - 3} pos_${(i << 4) + j}`
 	        coordinate.style.position = 'absolute'
 	        coordinate.style.top = startHeight + (i - 3) * gapHeight
 	        coordinate.style.left = startWidth + (j - 3) * gapWidth

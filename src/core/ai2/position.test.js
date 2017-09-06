@@ -136,25 +136,50 @@ describe("position", function () {
   })
 
   describe('makeMove', function () {
-    const move1 = new Move(121,169,21,0)
-    const move2 = new Move(153,169,21,-2)
-    
-    const pos = new Pos(fens[6])
+    it('should get different zobrist(1) ',function(){
+      const move1 = new Move(121,169,21,0)
+      const move2 = new Move(153,169,21,-2)
+      
+      const pos = new Pos(fens[6])
+  
+      const firstZobrist1 = pos.zobrist
+  
+      pos.makeMove(move1)
+      const zobrist1 = pos.zobrist
+      pos.unMakeMove()
+  
+      const firstZobrist2 = pos.zobrist
+      pos.makeMove(move2)
+      const zobrist2 = pos.zobrist
+      pos.unMakeMove()
+  
+      const firstZobrist3 = pos.zobrist
+      console.assert(firstZobrist1.equal(firstZobrist2))
+      console.assert(firstZobrist2.equal(firstZobrist3))
+      console.assert(!zobrist1.equal(zobrist2))
+    })
 
-    const firstZobrist1 = pos.zobrist
-
-    pos.makeMove(move1)
-    const zobrist1 = pos.zobrist
-    pos.unMakeMove()
-
-    const firstZobrist2 = pos.zobrist
-    pos.makeMove(move2)
-    const zobrist2 = pos.zobrist
-    pos.unMakeMove()
-
-    const firstZobrist3 = pos.zobrist
-    console.assert(firstZobrist1.equal(firstZobrist2))
-    console.assert(firstZobrist2.equal(firstZobrist3))
-    console.assert(!zobrist1.equal(zobrist2))
+    it('should get different zobrist(2)',function(){
+      const move1 = new Move(121,169,21,0)
+      const move2 = new Move(153,169,21,-2)
+      
+      const pos = new Pos(fens[6])
+  
+      const firstZobrist1 = pos.zobrist
+  
+      pos.makeMove(move1)
+      const zobrist1 = pos.zobrist
+      pos.unMakeMove()
+  
+      const firstZobrist2 = pos.zobrist
+      pos.makeMove(move2)
+      const zobrist2 = pos.zobrist
+      pos.unMakeMove()
+  
+      const firstZobrist3 = pos.zobrist
+      console.assert(firstZobrist1.equal(firstZobrist2))
+      console.assert(firstZobrist2.equal(firstZobrist3))
+      console.assert(!zobrist1.equal(zobrist2))
+    })
   })
 })

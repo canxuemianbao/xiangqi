@@ -141,7 +141,7 @@ class ChessboardInterface {
     for (let i = 3; i <= 3 + row; i++) {
       for (let j = 3; j <= 3 + column; j++) {
         const coordinate = document.createElement('div')
-        coordinate.className = `coordinate coordinate_${i - 3}_${j - 3}`
+        coordinate.className = `coordinate coordinate_${i - 3}_${j - 3} pos_${(i << 4) + j}`
         coordinate.style.position = 'absolute'
         coordinate.style.top = startHeight + (i - 3) * gapHeight
         coordinate.style.left = startWidth + (j - 3) * gapWidth
