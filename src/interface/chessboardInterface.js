@@ -1,4 +1,3 @@
-const { ComradeError, FinishError, NotYourRoundError } = require('../core/error')
 const Game = require('../core/game')
 const { CharToInt } = require('../core/ai2/util')
 const { banValue, drawValue } = require('../core/ai2/evaluate')
@@ -193,7 +192,6 @@ class ChessboardInterface {
     const fen = this.game.toFen()
     const pc = {}
 
-    console.log(fen)
     const fenInfo = fen.split(' ')
 
     this.coordinates.forEach((coordinate) => {

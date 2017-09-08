@@ -470,13 +470,6 @@ function ComputerThinkTimer(pos, remainTime = timeout, maxDepth = 30) {
 
 const { IntToChar, getRowAndColumn, InitialBoard } = require('./util')
 
-
-// searchDepth = 6
-// console.log(PVS(new Pos('1r2kCb2/4n4/b5c2/p2RR1n1p/2c6/9/P3P3P/4B1N2/9/1r1AKAB2 b'), Date.now() + 10000000, -Infinity, Infinity, 6))
-
-// console.log(IntToChar(new Pos('1r2kCb2/4n4/b5c2/p2RR1n1p/2c6/9/P3P3P/4B1N2/9/1r1AKAB2 b').board[52]))
-// console.log(IntToChar(new Pos('1r2kCb2/4n4/b5c2/p2RR1n1p/2c6/9/P3P3P/4B1N2/9/1r1AKAB2 b').board[116]))
-
 module.exports = {
   ComputerThinkTimer,
   MinMax,

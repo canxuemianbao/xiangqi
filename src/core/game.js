@@ -1,7 +1,3 @@
-const { Black, Red } = require('./color')
-const { Shuai, generateChess } = require('./chess')
-const { ComradeError, FinishError, NotYourRoundError } = require('./error')
-// const { State, search } = require("./ai/main")
 const { search, Pos, MinMax, drawValue, banValue } = require('./ai2/main')
 
 

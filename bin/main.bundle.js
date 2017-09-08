@@ -45,9 +45,9 @@
 /***/ function(module, exports, __webpack_require__) {
 
 	const Game = __webpack_require__(1)
-	const { Move } = __webpack_require__(9)
-	const ChessboardInterface = __webpack_require__(12)
-	const $ = __webpack_require__(15)
+	const { Move } = __webpack_require__(5)
+	const ChessboardInterface = __webpack_require__(8)
+	const $ = __webpack_require__(11)
 
 	//'4kr3/9/5c3/5R3/9/4C4/9/9/6n2/5K3 w'
 	const game = new Game()
@@ -62,11 +62,7 @@
 /* 1 */
 /***/ function(module, exports, __webpack_require__) {
 
-	const { Black, Red } = __webpack_require__(2)
-	const { Shuai, generateChess } = __webpack_require__(3)
-	const { ComradeError, FinishError, NotYourRoundError } = __webpack_require__(5)
-	// const { State, search } = require("./ai/main")
-	const { search, Pos, MinMax, drawValue, banValue } = __webpack_require__(6)
+	const { search, Pos, MinMax, drawValue, banValue } = __webpack_require__(2)
 
 
 	class Game extends Pos {
@@ -102,428 +98,9 @@
 
 /***/ },
 /* 2 */
-/***/ function(module, exports) {
-
-	class Red {
-	  static isForward(chessRow) {
-	    return function (targetRow) {
-	      return targetRow - chessRow <= 0
-	    }
-	  }
-	}
-
-	class Black {
-	  static isForward(chessRow) {
-	    return function (targetRow) {
-	      return targetRow - chessRow >= 0
-	    }
-	  }
-	}
-
-	module.exports={Red,Black}
-
-/***/ },
-/* 3 */
 /***/ function(module, exports, __webpack_require__) {
 
-	const area = __webpack_require__(4)
-	const { PosError, CannotMoveError } = __webpack_require__(5)
-	const { Red, Black } = __webpack_require__(2)
-
-	class Chess {
-	  constructor(id, row, column, color) {
-	    this.id = id
-	    this.row = row
-	    this.column = column
-	    this.color = color
-	    if (!this.isPosValid(row, column)) throw new PosError()
-	  }
-
-	  isForward(targetRow) {
-	    return this.color.isForward(this.row)(targetRow)
-	  }
-
-	  isPosValid(row, column) {
-	    return Chess.isInArea(this.wholeArea)(row, column)
-	  }
-
-	  get wholeArea() {
-	    return area.wholeArea
-	  }
-
-	  get myArea() {
-	    return area.myArea(this.color)
-	  }
-
-	  get myNineArea() {
-	    return area.myNineArea(this.color)
-	  }
-
-	  static isInArea(area) {
-	    return (row, column) => {
-	      return area[row] && area[row][column] || false
-	    }
-	  }
-
-	  isMovePatternValid(gameTurn) {
-	    return (row, column) => true
-	  }
-
-	  isComrade(chess) {
-	    return chess != null && this.color === chess.color
-	  }
-
-	  canMove(gameTurn) {
-	    return (row, column) => this.isMovePatternValid(gameTurn)(row, column) && this.isPosValid(row, column) && !this.isComrade(gameTurn.getChess(row, column))
-	  }
-
-	  moveTo(gameTurn, trace) {
-	    return (row, column) => {
-	      if (this.canMove(gameTurn)(row, column)) {
-	        return gameTurn.update(this, new (this.constructor)(this.id, row, column, this.color), trace)
-	      }
-	      throw new CannotMoveError()
-	    }
-	  }
-
-	  next(gameTurn) {
-	    let self = this
-	    return {
-	      *[Symbol.iterator]() {
-	        for (let row = 0; row < self.wholeArea.length; row++) {
-	          for (let column = 0; column < self.wholeArea[0].length; column++) {
-	            try {
-	              yield self.moveTo(gameTurn)(row, column)
-	            } catch (err) {
-
-	            }
-	          }
-	        }
-	      }
-	    }
-	  }
-	}
-
-	class Bing extends Chess {
-	  _isMovePatternValidInMyArea(row, column) {
-	    return this.isForward(row) && Math.abs(this.row - row) === 1 && this.column === column
-	  }
-
-	  _isMovePatternValidInOpponentArea(row, column) {
-	    return this.isForward(row) && Math.abs(this.row - row) + Math.abs(this.column - column) === 1
-	  }
-
-	  isMovePatternValid(gameTurn) {
-	    return (row, column) => {
-	      const isInMyArea = Chess.isInArea(this.myArea)(row, column)
-	      return isInMyArea ? this._isMovePatternValidInMyArea(row, column) : this._isMovePatternValidInOpponentArea(row, column)
-	    }
-	  }
-
-	  fen() {
-	    return this.color === Red ? "P" : "p"
-	  }
-	}
-
-	class Shuai extends Chess {
-	  isPosValid(row, column) {
-	    return Chess.isInArea(this.myNineArea)(row, column)
-	  }
-
-	  isMovePatternValid(gameTurn) {
-	    return (row, column) => {
-	      return Math.abs(this.row - row) + Math.abs(this.column - column) === 1
-	    }
-	  }
-
-	  fen() {
-	    return this.color === Red ? "K" : "k"
-	  }
-	}
-
-	class Shi extends Chess {
-	  isPosValid(row, column) {
-	    return Chess.isInArea(this.myNineArea)(row, column)
-	  }
-
-	  isMovePatternValid(gameTurn) {
-	    return (row, column) => {
-	      return Math.abs(this.row - row) === 1 && Math.abs(this.column - column) === 1
-	    }
-	  }
-
-	  fen() {
-	    return this.color === Red ? "A" : "a"
-	  }
-	}
-
-	class Xiang extends Chess {
-	  isPosValid(row, column) {
-	    return Chess.isInArea(this.myArea)(row, column)
-	  }
-
-	  isMovePatternValid(gameTurn) {
-	    return (row, column) => {
-	      const isMovePatternValid = Math.abs(this.row - row) === 2 && Math.abs(this.column - column) === 2
-
-	      return isMovePatternValid && gameTurn.getChess((this.row + row) / 2, (this.column + column) / 2) == null
-	    }
-	  }
-
-	  fen() {
-	    return this.color === Red ? "B" : "b"
-	  }
-	}
-
-	class Ma extends Chess {
-	  isMovePatternValid(gameTurn) {
-	    return (row, column) => {
-	      const isMovePatternValidLeft1 = Math.abs(this.row - row) === 1 && (this.column - column === 2 && gameTurn.getChess(this.row, column + 1) == null)
-	      const isMovePatternValidRight1 = Math.abs(this.row - row) === 1 && (column - this.column === 2 && gameTurn.getChess(this.row, column - 1) == null)
-	      const isMovePatternValidLeft2 = (this.row - row === 2 && gameTurn.getChess(row + 1, this.column) == null) && Math.abs(this.column - column) === 1
-	      const isMovePatternValidRight2 = (row - this.row === 2 && gameTurn.getChess(row - 1, this.column) == null) && Math.abs(this.column - column) === 1
-	      const isMovePatternValid = isMovePatternValidLeft1 || isMovePatternValidRight1 || isMovePatternValidLeft2 || isMovePatternValidRight2
-
-	      return isMovePatternValid
-	    }
-	  }
-
-	  fen() {
-	    return this.color === Red ? "N" : "n"
-	  }
-	}
-
-	class Che extends Chess {
-	  isMovePatternValid(gameTurn) {
-	    return (row, column) => {
-	      const isOneLine = (this.row === row && this.column !== column) || (this.column === column && this.row !== row)
-
-	      const existObstacle = () => {
-	        if (this.column === column) {
-	          const [low, high] = this.row > row ? [row + 1, this.row] : [this.row + 1, row]
-	          for (let i = low; i < high; i++) {
-	            if (gameTurn.getChess(i, this.column) != null) {
-	              return true
-	            }
-	          }
-	        } else {
-	          const [low, high] = this.column > column ? [column + 1, this.column] : [this.column + 1, column]
-	          for (let i = low; i < high; i++) {
-	            if (gameTurn.getChess(this.row, i) != null) {
-	              return true
-	            }
-	          }
-	        }
-	        return false
-	      }
-
-	      return isOneLine && !existObstacle()
-	    }
-	  }
-
-	  fen() {
-	    return this.color === Red ? "R" : "r"
-	  }
-	}
-
-	class Pao extends Chess {
-	  isMovePatternValid(gameTurn) {
-	    return (row, column) => {
-	      const isOneLine = (this.row === row && this.column !== column) || (this.column === column && this.row !== row)
-
-	      if (!isOneLine) {
-	        return false
-	      }
-
-	      const getObstacleNums = () => {
-	        let obstacleNums = 0
-	        if (this.column === column) {
-	          const [low, high] = this.row > row ? [row + 1, this.row] : [this.row + 1, row]
-	          for (let i = low; i < high; i++) {
-	            if (gameTurn.getChess(i, this.column) != null) {
-	              obstacleNums++
-	            }
-	          }
-	        } else {
-	          const [low, high] = this.column > column ? [column + 1, this.column] : [this.column + 1, column]
-	          for (let i = low; i < high; i++) {
-	            if (gameTurn.getChess(this.row, i) != null) {
-	              obstacleNums++
-	            }
-	          }
-	        }
-	        return obstacleNums
-	      }
-
-	      const obstacleNums = getObstacleNums()
-	      const chess = gameTurn.getChess(row, column)
-
-	      const isMovePatternValid1 = obstacleNums === 1 && (chess != null && this.color !== chess.color)
-	      const isMovePatternValid2 = obstacleNums === 0 && chess == null
-	      return (isMovePatternValid1 || isMovePatternValid2)
-	    }
-	  }
-
-	  fen() {
-	    return this.color === Red ? "C" : "c"
-	  }
-	}
-
-	const redShuais = ["red_shuai"]
-	const redShis = ["red_shi_1", "red_shi_2"]
-	const redXiangs = ["red_xiang_1", "red_xiang_2"]
-	const redMas = ["red_ma_1", "red_ma_2"]
-	const redChes = ["red_che_1", "red_che_2"]
-	const redPaos = ["red_pao_1", "red_pao_2"]
-	const redBings = ["red_bing_1", "red_bing_2", "red_bing_3", "red_bing_4", "red_bing_5"]
-
-	const blackShuais = ["black_shuai"]
-	const blackShis = ["black_shi_1", "black_shi_2"]
-	const blackXiangs = ["black_xiang_1", "black_xiang_2"]
-	const blackMas = ["black_ma_1", "black_ma_2"]
-	const blackChes = ["black_che_1", "black_che_2"]
-	const blackPaos = ["black_pao_1", "black_pao_2"]
-	const blackBings = ["black_bing_1", "black_bing_2", "black_bing_3", "black_bing_4", "black_bing_5"]
-
-	function generateChess(fen, x, y) {
-	  //Black
-	  if (fen === 'k') {
-	    return new Shuai(blackShuais.shift(), x, y, Black)
-	  } else if (fen === 'a') {
-	    return new Shi(blackShis.shift(), x, y, Black)
-	  } else if (fen === 'b') {
-	    return new Xiang(blackXiangs.shift(), x, y, Black)
-	  } else if (fen === 'n') {
-	    return new Ma(blackMas.shift(), x, y, Black)
-	  } else if (fen === 'r') {
-	    return new Che(blackChes.shift(), x, y, Black)
-	  } else if (fen === 'c') {
-	    return new Pao(blackPaos.shift(), x, y, Black)
-	  } else if (fen === 'p') {
-	    return new Bing(blackBings.shift(), x, y, Black)
-	  }
-
-	  //red
-	  else if (fen === 'K') {
-	    return new Shuai(redShuais.shift(), x, y, Red)
-	  } else if (fen === 'A') {
-	    return new Shi(redShis.shift(), x, y, Red)
-	  } else if (fen === 'B') {
-	    return new Xiang(redXiangs.shift(), x, y, Red)
-	  } else if (fen === 'N') {
-	    return new Ma(redMas.shift(), x, y, Red)
-	  } else if (fen === 'R') {
-	    return new Che(redChes.shift(), x, y, Red)
-	  } else if (fen === 'C') {
-	    return new Pao(redPaos.shift(), x, y, Red)
-	  } else if (fen === 'P') {
-	    return new Bing(redBings.shift(), x, y, Red)
-	  }
-	}
-
-	module.exports = {
-	  Chess,
-	  Bing,
-	  Shuai,
-	  Shi,
-	  Xiang,
-	  Ma,
-	  Che,
-	  Pao,
-	  generateChess
-	}
-
-/***/ },
-/* 4 */
-/***/ function(module, exports, __webpack_require__) {
-
-	const {Red,Black} = __webpack_require__(2)
-
-	const area=(function getArea() {
-	  function generateArea(rowStart, rowEnd, columnStart, columnEnd) {
-	    const area = []
-	    for (let i = rowStart; i < rowEnd; i++) {
-	      for (let j = columnStart; j < columnEnd; j++) {
-	        if (!area[i]) {
-	          area[i] = []
-	        }
-	        area[i][j] = true
-	      }
-	    }
-	    return area
-	  }
-
-	  const wholeArea = generateArea(0, 10, 0, 9)
-	  const redArea=generateArea(5, 10, 0, 9)
-	  const blackArea=generateArea(0, 5, 0, 9)
-	  const redNineArea=generateArea(7, 10, 3, 6)
-	  const blackNineArea=generateArea(0, 3, 3, 6)
-	  
-	  const myArea = (color) => {
-	    return color === Red?redArea:blackArea
-	  }
-
-	  const myNineArea = (color) => {
-	    return color === Red?redNineArea:blackNineArea
-	  }
-
-	  return {
-	    wholeArea,
-	    myArea,
-	    myNineArea
-	  }
-	})()
-
-	module.exports=area
-
-
-/***/ },
-/* 5 */
-/***/ function(module, exports) {
-
-	class FinishError extends Error{
-	  constructor(){
-	    super('正在被将军')
-	  }
-	}
-
-	class PosError extends Error{
-	  constructor(){
-	    super('不能在这个位置')
-	  }
-	}
-
-	class ComradeError extends Error{
-	  constructor(){
-	    super('不能吃同样颜色的棋子')
-	  }
-	}
-
-	class CannotMoveError extends Error{
-	  constructor(){
-	    super('不能移动到这个位置')
-	  }
-	}
-
-	class NotYourRoundError extends Error{
-	  constructor(){
-	    super('不是你的回合')
-	  }
-	}
-
-	module.exports={
-	  FinishError,
-	  PosError,
-	  ComradeError,
-	  CannotMoveError,
-	  NotYourRoundError
-	}
-
-/***/ },
-/* 6 */
-/***/ function(module, exports, __webpack_require__) {
-
-	const { ComputerThinkTimer, MinMax, checkmatedValue } = __webpack_require__(7)
+	const { ComputerThinkTimer, MinMax, checkmatedValue } = __webpack_require__(3)
 
 	function search(pos) {
 	  const start = Date.now()
@@ -537,21 +114,21 @@
 
 	module.exports = {
 	  search,
-	  MinMax: __webpack_require__(7).MinMax,
-	  Pos: __webpack_require__(8),
-	  Move: __webpack_require__(9).Move,
-	  drawValue: __webpack_require__(10).drawValue,
-	  banValue: __webpack_require__(10).banValue
+	  MinMax: __webpack_require__(3).MinMax,
+	  Pos: __webpack_require__(4),
+	  Move: __webpack_require__(5).Move,
+	  drawValue: __webpack_require__(6).drawValue,
+	  banValue: __webpack_require__(6).banValue
 	}
 
 /***/ },
-/* 7 */
+/* 3 */
 /***/ function(module, exports, __webpack_require__) {
 
-	const Pos = __webpack_require__(8)
-	const { checkmatedValue, winValue, banValue, drawValue } = __webpack_require__(10)
-	const { HashTable, hashAlpha, hashBeta, hashExact } = __webpack_require__(11)
-	const { Move } = __webpack_require__(9)
+	const Pos = __webpack_require__(4)
+	const { checkmatedValue, winValue, banValue, drawValue } = __webpack_require__(6)
+	const { HashTable, hashAlpha, hashBeta, hashExact } = __webpack_require__(7)
+	const { Move } = __webpack_require__(5)
 
 	//用于判断是否将死
 	function MinMax(pos, maxDepth = 1) {
@@ -1018,14 +595,7 @@
 	  return bestMove
 	}
 
-	const { IntToChar, getRowAndColumn, InitialBoard } = __webpack_require__(9)
-
-
-	// searchDepth = 6
-	// console.log(PVS(new Pos('1r2kCb2/4n4/b5c2/p2RR1n1p/2c6/9/P3P3P/4B1N2/9/1r1AKAB2 b'), Date.now() + 10000000, -Infinity, Infinity, 6))
-
-	// console.log(IntToChar(new Pos('1r2kCb2/4n4/b5c2/p2RR1n1p/2c6/9/P3P3P/4B1N2/9/1r1AKAB2 b').board[52]))
-	// console.log(IntToChar(new Pos('1r2kCb2/4n4/b5c2/p2RR1n1p/2c6/9/P3P3P/4B1N2/9/1r1AKAB2 b').board[116]))
+	const { IntToChar, getRowAndColumn, InitialBoard } = __webpack_require__(5)
 
 	module.exports = {
 	  ComputerThinkTimer,
@@ -1034,7 +604,7 @@
 	}
 
 /***/ },
-/* 8 */
+/* 4 */
 /***/ function(module, exports, __webpack_require__) {
 
 	const {
@@ -1057,7 +627,7 @@
 	  canAttackByRook,
 	  canAttackByCannon,
 	  canAttackByPawn,
-	} = __webpack_require__(9)
+	} = __webpack_require__(5)
 
 	const {
 	  evalWhite,
@@ -1068,14 +638,14 @@
 	  drawValue,
 	  nullOkMargin,
 	  nullSafeMargin
-	} = __webpack_require__(10)
+	} = __webpack_require__(6)
 
 	const {
 	  zobristTable,
 	  zobristSide,
 	  Zobrist,
 	  ZobristNode
-	} = __webpack_require__(11)
+	} = __webpack_require__(7)
 
 	const initialFen = 'rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w'
 
@@ -1562,7 +1132,7 @@
 
 
 /***/ },
-/* 9 */
+/* 5 */
 /***/ function(module, exports) {
 
 	//board
@@ -2224,7 +1794,7 @@
 	}
 
 /***/ },
-/* 10 */
+/* 6 */
 /***/ function(module, exports, __webpack_require__) {
 
 	
@@ -2237,7 +1807,7 @@
 	  RookMove,
 	  CannonMove,
 	  PawnMove,
-	} = __webpack_require__(9)
+	} = __webpack_require__(5)
 
 	// const WhitePositionValues = [
 	//   [	// 帅
@@ -3010,10 +2580,10 @@
 	}
 
 /***/ },
-/* 11 */
+/* 7 */
 /***/ function(module, exports, __webpack_require__) {
 
-	const { unknownValue, winValue, banValue, drawValue, checkmatedValue } = __webpack_require__(10)
+	const { unknownValue, winValue, banValue, drawValue, checkmatedValue } = __webpack_require__(6)
 
 	const hashAlpha = 0
 	const hashExact = 1
@@ -3219,16 +2789,15 @@
 
 
 /***/ },
-/* 12 */
+/* 8 */
 /***/ function(module, exports, __webpack_require__) {
 
-	const { ComradeError, FinishError, NotYourRoundError } = __webpack_require__(5)
 	const Game = __webpack_require__(1)
-	const { CharToInt } = __webpack_require__(9)
-	const { banValue, drawValue } = __webpack_require__(10)
-	const _ = __webpack_require__(13)
-	const $ = __webpack_require__(15)
-	const toastr = __webpack_require__(16)
+	const { CharToInt } = __webpack_require__(5)
+	const { banValue, drawValue } = __webpack_require__(6)
+	const _ = __webpack_require__(9)
+	const $ = __webpack_require__(11)
+	const toastr = __webpack_require__(12)
 
 	class ChessboardInterface {
 	  constructor(game = new Game(), playSide = 0, startWidth, startHeight, gapWidth, gapHeight) {
@@ -3417,7 +2986,6 @@
 	    const fen = this.game.toFen()
 	    const pc = {}
 
-	    console.log(fen)
 	    const fenInfo = fen.split(' ')
 
 	    this.coordinates.forEach((coordinate) => {
@@ -3496,7 +3064,7 @@
 	module.exports = ChessboardInterface
 
 /***/ },
-/* 13 */
+/* 9 */
 /***/ function(module, exports, __webpack_require__) {
 
 	var __WEBPACK_AMD_DEFINE_RESULT__;/* WEBPACK VAR INJECTION */(function(global, module) {/**
@@ -20584,10 +20152,10 @@
 	  }
 	}.call(this));
 
-	/* WEBPACK VAR INJECTION */}.call(exports, (function() { return this; }()), __webpack_require__(14)(module)))
+	/* WEBPACK VAR INJECTION */}.call(exports, (function() { return this; }()), __webpack_require__(10)(module)))
 
 /***/ },
-/* 14 */
+/* 10 */
 /***/ function(module, exports) {
 
 	module.exports = function(module) {
@@ -20603,7 +20171,7 @@
 
 
 /***/ },
-/* 15 */
+/* 11 */
 /***/ function(module, exports, __webpack_require__) {
 
 	var __WEBPACK_AMD_DEFINE_ARRAY__, __WEBPACK_AMD_DEFINE_RESULT__;/*!
@@ -30862,7 +30430,7 @@
 
 
 /***/ },
-/* 16 */
+/* 12 */
 /***/ function(module, exports, __webpack_require__) {
 
 	var __WEBPACK_AMD_DEFINE_ARRAY__, __WEBPACK_AMD_DEFINE_RESULT__;/*
@@ -30879,7 +30447,7 @@
 	 */
 	/* global define */
 	; (function (define) {
-	    !(__WEBPACK_AMD_DEFINE_ARRAY__ = [__webpack_require__(15)], __WEBPACK_AMD_DEFINE_RESULT__ = function ($) {
+	    !(__WEBPACK_AMD_DEFINE_ARRAY__ = [__webpack_require__(11)], __WEBPACK_AMD_DEFINE_RESULT__ = function ($) {
 	        return (function () {
 	            var $container;
 	            var listener;
@@ -31293,11 +30861,11 @@
 
 	        })();
 	    }.apply(exports, __WEBPACK_AMD_DEFINE_ARRAY__), __WEBPACK_AMD_DEFINE_RESULT__ !== undefined && (module.exports = __WEBPACK_AMD_DEFINE_RESULT__));
-	}(__webpack_require__(17)));
+	}(__webpack_require__(13)));
 
 
 /***/ },
-/* 17 */
+/* 13 */
 /***/ function(module, exports) {
 
 	module.exports = function() { throw new Error("define cannot be used indirect"); };

@@ -1022,13 +1022,13 @@ compareTest()
 
 
 
-main('MinMax_test_result', MinMaxTest, 4)
-main('AlphaBeta_test_result', AlphaBeta.bind(null, -Infinity, Infinity), 5)
+main('MinMax_test_result', MinMaxTest, 6)
+main('AlphaBeta_test_result', AlphaBeta.bind(null, -Infinity, Infinity), 7)
 // main('NullMoveAlphaBeta_test_result', NullMoveAlphaBeta.bind(null, -Infinity, Infinity), 5)
-main('AlphaBetaWithHashTable_test_result', AlphaBetaWithHashTable.bind(null, -Infinity, Infinity), 5)
-main('AlphaBetaWithHashTable2_test_result', AlphaBetaWithHashTable2.bind(null, -Infinity, Infinity), 5)
-main('sortedMoveHashTable_test_result', sortedMoveHashTable.bind(null, -Infinity, Infinity), 7)
-main('PVS_test_result', PVS.bind(null, -Infinity, Infinity), 7)
+main('AlphaBetaWithHashTable_test_result', AlphaBetaWithHashTable.bind(null, -Infinity, Infinity), 7)
+main('AlphaBetaWithHashTable2_test_result', AlphaBetaWithHashTable2.bind(null, -Infinity, Infinity), 7)
+main('sortedMoveHashTable_test_result', sortedMoveHashTable.bind(null, -Infinity, Infinity), 8)
+main('PVS_test_result', PVS.bind(null, -Infinity, Infinity), 8)
 
 
 // console.log(MinMaxTest(new Sg_searchNode(),new Pos('1nbakabnr/r8/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/2N1C2C1/9/R1BAKABNR b'),5))
