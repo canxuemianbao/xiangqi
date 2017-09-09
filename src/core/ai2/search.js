@@ -448,7 +448,7 @@ function PVS(pos, finishTime, alpha = -Infinity, beta = Infinity, depth, nullMov
 function ComputerThinkTimer(pos, remainTime = timeout, maxDepth = 30) {
   initial()
 
-  const finishTime = Date.now() + timeout
+  const finishTime = Date.now() + remainTime
   let bestMove = null
   for (let i = 1; i <= maxDepth; i++) {
     searchDepth = i

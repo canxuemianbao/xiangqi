@@ -290,27 +290,6 @@ class Pos {
     return this.zobristStack[this.zobristStack.length - 1]
   }
 
-  // makeEmptyMove() {
-  //   this.moveStack.push(null)
-  //   this.zobristStack.push(this.zobrist.xor(zobristSide))
-  //   this.checkStack.push(this.canCheck())
-  //   this.changeSide()
-
-  //   if (this.canCheck()) {
-  //     this.unMakeEmptyMove()
-  //     return false
-  //   }
-  //   return true
-  // }
-
-  // unMakeEmptyMove() {
-  //   //弹出上一个zobrist值
-  //   this.zobristStack.pop()
-  //   this.moveStack.pop()
-  //   this.checkStack.pop()
-  //   this.changeSide()
-  // }
-
   movePiece(move) {
     //存储移动的棋子
     this.moveStack.push(move)
