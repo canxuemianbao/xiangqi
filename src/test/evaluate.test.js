@@ -1,12 +1,12 @@
-const Pos = require('./position')
-const { Move, IntToChar } = require('./util')
+const Pos = require('../core/position')
+const { Move, IntToChar } = require('../core/util')
 
 const {
   evalWhite,
   evalBlack,
   evalWhiteMove,
   evalBlackMove
-} = require('./evaluate')
+} = require('../core/evaluate')
 
 let pos = new Pos()
 

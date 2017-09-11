@@ -47,9 +47,9 @@
 	
 	const toastr = __webpack_require__(10)
 
-	const Pos = __webpack_require__(4)
-	const { ComputerThinkTimer, MinMax } = __webpack_require__(3)
-	const { banValue, drawValue, winValue } = __webpack_require__(6)
+	const Pos = __webpack_require__(12)
+	const { ComputerThinkTimer, MinMax } = __webpack_require__(16)
+	const { banValue, drawValue, winValue } = __webpack_require__(14)
 
 	const initialFen = 'rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w'
 
@@ -197,7 +197,7 @@
 	function computerConsider() {
 	  playerTurn = false
 
-	  computerMove(ComputerThinkTimer(pos, 300))
+	  computerMove(ComputerThinkTimer(pos))
 	}
 
 	let from
@@ -308,2652 +308,11 @@
 /***/ },
 /* 1 */,
 /* 2 */,
-/* 3 */
-/***/ function(module, exports, __webpack_require__) {
-
-	const Pos = __webpack_require__(4)
-	const { checkmatedValue, winValue, banValue, drawValue } = __webpack_require__(6)
-	const { HashTable, hashAlpha, hashBeta, hashExact } = __webpack_require__(7)
-	const { Move } = __webpack_require__(5)
-
-	//用于判断是否将死
-	function MinMax(pos, maxDepth = 1) {
-	  let resultMove = null
-
-	  const score = (function helper(depth) {
-	    if (depth === 0) {
-	      return pos.evaluate()
-	    }
-
-	    let bestMove = null
-	    let bestScore = -Infinity
-
-	    for (let move of pos.generateMoves()) {
-	      if (pos.makeMove(move)) {
-	        const score = -helper(depth - 1)
-	        pos.unMakeMove()
-	        if (score > bestScore) {
-	          bestMove = move
-	          bestScore = score
-	        }
-	      }
-	    }
-
-	    if (bestMove == null) {
-	      return (maxDepth - depth) - checkmatedValue
-	    }
-
-	    if (depth == maxDepth) {
-	      resultMove = bestMove
-	    }
-	    return bestScore
-	  })(maxDepth)
-
-	  return resultMove
-	}
-
-	const timeout = 5 * 1000
-	const timeoutValue = 300000
-	const limitDepth = 40
-	const nullDepth = 2
-	const hashFakeDepth = 50
-
-	let hashTable = new HashTable()
-	let quiescentHashTable = new HashTable()
-	let fullHistoryTable = Array.from(Array(256)).map(() => Array.from(Array(256)).map(() => 0))
-	let quiescentHistoryTable = Array.from(Array(256)).map(() => Array.from(Array(256)).map(() => 0))
-	let killerMove = []
-	let quiescentKillerMove = []
-	let isFinished = true
-	let bestMove = null
-	let searchDepth = 1
-
-
-	//重置整个搜索
-	function initial() {
-	  hashTable = new HashTable()
-	  quiescentHashTable = new HashTable()
-	  fullHistoryTable = Array.from(Array(256)).map(() => Array.from(Array(256)).map(() => 0))
-	  quiescentHistoryTable = Array.from(Array(256)).map(() => Array.from(Array(256)).map(() => 0))
-	  killerMove = []
-	  quiescentKillerMove = []
-	  isFinished = true
-	  searchDepth = 1
-	  bestMove = null
-	}
-
-	//对走法进行排序
-	const sortingMoves = (hashMv, ply, historyTable = fullHistoryTable) => (move1, move2) => {
-	  //置换表排序
-	  if (move1 === hashMv) {
-	    return -1
-	  } else if (move2 === hashMv) {
-	    return 1
-	  }
-	  else {
-	    //按杀手1排序
-	    if (killerMove[ply]) {
-	      if (killerMove[ply][0] && killerMove[ply][0].equal(move1)) {
-	        return -1
-	      } else if (killerMove[ply][0] && killerMove[ply][0].equal(move2)) {
-	        return 1
-	      }
-
-	      //按杀手2排序
-	      if (killerMove[ply][1] && killerMove[ply][1].equal(move1)) {
-	        return -1
-	      } else if (killerMove[ply][1] && killerMove[ply][1].equal(move2)) {
-	        return 1
-	      }
-	    }
-
-	    //mvv/lva排序吃子走法
-	    if (move1.wvl != null && move2.wvl != null) {
-	      const gap = move1.wvl - move2.wvl
-	      return gap > 0 ? -1 : gap === 0 ? 0 : 1
-	    } else if (move1.wvl != null && move2.wvl == null) {
-	      return -1
-	    } else if (move2.wvl != null && move1.wvl == null) {
-	      return 1
-	    }
-
-	    // 历史表排序不吃子走法
-	    else {
-	      const gap = historyTable[move1.from][move1.to] - historyTable[move2.from][move2.to]
-	      return gap > 0 ? -1 : gap === 0 ? 0 : 1
-	    }
-	  }
-	}
-
-	//保存历史表走法，depth是向下的层数，ply是向上的层数
-	function saveGoodMove(mv, depth, ply, historyTable = fullHistoryTable) {
-	  historyTable[mv.from][mv.to] += depth
-
-	  //防止溢出
-	  if (historyTable[mv.from][mv.to] > 240) {
-	    historyTable.forEach((row, from) => {
-	      row.forEach((score, to) => {
-	        historyTable[from][to] = score / 4
-	      })
-	    })
-	  }
-
-	  if (killerMove[ply] != null) {
-	    killerMove[ply] = [mv, killerMove[ply][0]]
-	  } else {
-	    killerMove[ply] = [mv]
-	  }
-	}
-
-	//静态搜索
-	function PVSQuiescentSearch(pos, finishTime, alpha = -Infinity, beta = Infinity) {
-	  // 0. 判断是否超时
-	  if (Date.now() > finishTime) {
-	    isFinished = false
-	    return timeoutValue
-	  }
-
-	  //1. 是否走了连续将军的走法，导致局面重复
-	  const repValue = pos.repValue()
-	  if (repValue) {
-	    return repValue
-	  }
-
-	  //获得pos的zobrist值和当前已经走过的步数
-	  const zobrist = pos.zobrist
-	  const ply = pos.moveStack.length
-	  //2. 查看置换表里是否已经有走法了
-	  const hashScore = quiescentHashTable.readHashTable(zobrist, hashFakeDepth, alpha, beta, ply)
-	  let hashMv
-
-	  if (hashScore != null) {
-	    //2.1 找到了可用的得分
-	    if (typeof hashScore === 'number') {
-	      return hashScore
-	    }
-	    //2.2 找到了可用的置换表走法
-	    else if (hashScore instanceof Move) {
-	      hashMv = hashScore
-	    }
-	  }
-
-	  //2. 局面是否足够好到产生截断
-	  const score = pos.evaluate()
-	  if (score >= beta) {
-	    return score
-	  }
-
-	  //3. 到达了极限深度
-	  if (ply >= limitDepth) {
-	    return pos.evaluate()
-	  }
-
-	  //4. 初始化最低值
-	  let bestScore = score
-
-	  //5. 生成能走的走法
-	  let moves = pos.generateMoves().sort(sortingMoves(hashMv, ply, quiescentHistoryTable))
-
-	  //5.1 是否被将军中
-	  const isChecked = pos.isChecked()
-
-	  //6. 搜索所有走法
-
-	  //6.1 是否有棋可走，没有则被将死了
-	  let hasMove = false
-	  //6.2 是否是超过了alpha值（是pv值）
-	  let exceedAlpha = bestScore > alpha
-	  //6.3 是否走了至少一步（吃子或者解将）
-	  let pvFlag = false
-	  //6.4 最佳走法
-	  let bestMove
-
-	  for (let move of moves) {
-	    if (pos.makeMove(move)) {
-	      hasMove = true
-
-	      //如果正在被将军，走全部走法，如果没有被将军，走吃子走法
-	      if (isChecked || move.capture) {
-	        let score
-	        if (!pvFlag) {
-	          score = -PVSQuiescentSearch(pos, finishTime, -beta, -alpha)
-	          pvFlag = true
-	        }
-	        //若已经走过至少一个走法，走限制边界的pvs算法
-	        else {
-	          //预测下一个走法要么超过beta产生截断，要么比bestScore要差
-	          score = -PVSQuiescentSearch(pos, finishTime, -(alpha + 1), -alpha)
-
-	          //若预测失败，这个走法可能是一个好的走法，那么重新搜索pvs得分
-	          if (score > alpha && score < beta) {
-	            score = -PVSQuiescentSearch(pos, finishTime, -beta, -alpha)
-	          }
-	        }
-	        if (score >= beta) {
-	          //保存得分到置换表里
-	          quiescentHashTable.saveHashTable(zobrist, score, hashFakeDepth, hashBeta, move, ply)
-	          //保存走法到历史表里
-	          saveGoodMove(move, 1, ply, quiescentHistoryTable)
-	          pos.unMakeMove()
-	          return score
-	        }
-
-	        if (score > bestScore) {
-	          bestScore = score
-	          bestMove = move
-
-	          if (score > alpha) {
-	            alpha = score
-	            exceedAlpha = true
-	          }
-	        }
-	      }
-	      pos.unMakeMove()
-	    }
-	  }
-
-	  //7. 返回得分，如果没有走法，返回将死得分
-	  if (hasMove) {
-	    //7.1 超过了alpha，是pv值
-	    if (exceedAlpha) {
-	      //7.1.1 至少走了一步吃子走法或者应将走法，则添加到历史表里
-	      if (bestMove) {
-	        saveGoodMove(bestMove, 1, ply, quiescentHistoryTable)
-	      }
-	      quiescentHashTable.saveHashTable(zobrist, bestScore, hashFakeDepth, hashExact, bestMove, ply)
-	      return bestScore
-	    }
-	    //7.2 没有超过alpha
-	    else {
-	      quiescentHashTable.saveHashTable(zobrist, bestScore, hashFakeDepth, hashAlpha, bestMove, ply)
-	      return bestScore
-	    }
-	  }
-	  //被将死了 
-	  else {
-	    return ply - checkmatedValue
-	  }
-	}
-
-	function QuiescentSearch(pos, alpha, beta) {
-	  const ply = pos.moveStack.length
-
-	  //1. 是否走了连续将军的走法，导致局面重复
-	  const repValue = pos.repValue()
-	  if (repValue) {
-	    return repValue
-	  }
-
-	  //2. 局面是否足够好到产生截断
-	  const score = pos.evaluate()
-	  if (score >= beta) {
-	    return score
-	  }
-
-	  //3. 到达了极限深度
-	  if (ply >= limitDepth) {
-	    return pos.evaluate()
-	  }
-
-	  //4. 初始化最低值
-	  let bestScore = score
-
-	  //5. 生成能走的走法
-	  let moves = pos.generateMoves()
-
-	  //5.1 是否被将军中
-	  const isChecked = pos.isChecked()
-
-	  //5.2 是否有棋可走，没有则被将死了
-	  let hasMove = false
-
-	  //6. 搜索所有走法
-	  for (let move of moves) {
-	    if (pos.makeMove(move)) {
-	      hasMove = true
-
-	      //如果正在被将军，走全部走法，如果没有被将军，走吃子走法
-	      if (isChecked || move.capture) {
-	        const score = -QuiescentSearch(pos, -beta, -alpha)
-	        if (score >= beta) {
-	          pos.unMakeMove()
-	          return score
-	        }
-
-	        if (score > bestScore) {
-	          bestScore = score
-
-	          if (score > alpha) {
-	            alpha = score
-	          }
-	        }
-	      }
-	      pos.unMakeMove()
-	    }
-	  }
-
-	  //7. 返回得分，如果没有走法，返回将死得分
-	  return hasMove ? bestScore : ply - checkmatedValue
-	}
-
-	function PVS(pos, finishTime, alpha = -Infinity, beta = Infinity, depth, nullMoveAble = true) {
-	  // 0. 判断是否超时
-	  if (Date.now() > finishTime) {
-	    isFinished = false
-	    return timeoutValue
-	  }
-
-	  // 1. 查看当前局面是否重复了
-	  const repValue = pos.repValue()
-	  if (repValue) {
-	    return repValue
-	  }
-
-	  //获得pos的zobrist值和当前已经走过的步数
-	  const zobrist = pos.zobrist
-	  const ply = pos.moveStack.length
-
-	  //2. 查看置换表里是否已经有走法了
-	  const hashScore = hashTable.readHashTable(zobrist, depth, alpha, beta, ply)
-	  let hashMv
-
-	  if (hashScore != null) {
-	    //2.1 找到了可用的得分
-	    if (typeof hashScore === 'number') {
-	      return hashScore
-	    }
-	    //2.2 找到了可用的置换表走法
-	    else if (hashScore instanceof Move) {
-	      hashMv = hashScore
-	    }
-	  }
-
-	  //3. 查看是否到达水平线,小于0是因为空步可能导致深度小于0
-	  if (depth <= 0) {
-	    const eval = PVSQuiescentSearch(pos, finishTime, alpha, beta)
-	    // const eval = pos.evaluate()
-	    return eval
-	  }
-
-	  //4. 根据置换表，杀手走法，历史表排序走法
-	  const moves = pos.generateMoves().sort(sortingMoves(hashMv, ply))
-
-	  //5. 按顺序进行pvs-alpha-beta算法
-	  let pvFlag = 0
-	  let bestScore = -Infinity
-	  let exceedAlpha = 0
-	  let bestMove = null
-	  for (let move of moves) {
-	    //如果这个走法是合法的(不会将死自己)
-	    if (pos.makeMove(move)) {
-	      let score
-	      //若是第一个走法，走普通的pvs算法
-	      if (!pvFlag) {
-	        score = -PVS(pos, finishTime, -beta, -alpha, depth - 1)
-	        pvFlag = 1
-	      }
-	      //若已经走过至少一个走法，走限制边界的pvs算法
-	      else {
-	        //预测下一个走法要么超过beta产生截断，要么比alpha要差
-	        score = -PVS(pos, finishTime, -(alpha + 1), -alpha, depth - 1)
-
-	        //若预测失败，这个走法可能是一个好的走法，那么重新搜索pvs得分
-	        if (score > alpha && score < beta) {
-	          score = -PVS(pos, finishTime, -beta, -alpha, depth - 1)
-	        }
-	      }
-	      pos.unMakeMove()
-
-	      //产生beta截断
-	      if (score >= beta) {
-	        //保存得分到置换表里
-	        hashTable.saveHashTable(zobrist, score, depth, hashBeta, move, ply)
-	        //保存走法到历史表里
-	        saveGoodMove(move, depth, ply)
-	        return score
-	      }
-
-	      if (score > bestScore) {
-	        bestMove = move
-	        //更新最好的得分
-	        bestScore = score
-	        //更新alpha值
-	        if (score > alpha) {
-	          alpha = score
-	          exceedAlpha = 1
-	        }
-	      }
-	    }
-	  }
-
-	  //6. 判断得分
-
-	  //6.1 搜完了整棵树
-	  if (searchDepth === depth) {
-	    return bestMove
-	  }
-
-	  //6.2 一步都没走,被将死了
-	  if (!pvFlag) {
-	    //尽量挣扎的久一点(笑)
-	    const score = ply - checkmatedValue
-	    //保存得分
-	    hashTable.saveHashTable(zobrist, score, depth, hashExact, null, ply)
-	    return score
-	  }
-	  //6.3 有走法
-	  else {
-	    //6.3.1走法是准确值，超过了初始alpha
-	    if (exceedAlpha) {
-	      //保存走法到历史表里
-	      saveGoodMove(bestMove, depth, ply)
-	      hashTable.saveHashTable(zobrist, bestScore, depth, hashExact, bestMove, ply)
-	      return bestScore
-	    }
-	    //6.3.2走法不好，比初始alpha还差
-	    else {
-	      hashTable.saveHashTable(zobrist, bestScore, depth, hashAlpha, bestMove, ply)
-	      return bestScore
-	    }
-	  }
-	}
-
-	function ComputerThinkTimer(pos, remainTime = timeout, maxDepth = 30) {
-	  initial()
-
-	  const finishTime = Date.now() + remainTime
-	  let bestMove = null
-	  for (let i = 1; i <= maxDepth; i++) {
-	    searchDepth = i
-	    console.log('=========')
-	    const resultMove = PVS(pos, finishTime, -checkmatedValue, checkmatedValue, i)
-
-	    if (resultMove && isFinished) {
-	      console.log("搜索层数: " + i)
-	      console.log(resultMove)
-	      bestMove = resultMove
-	    }
-
-	    if (Date.now() > finishTime) {
-	      break
-	    }
-	  }
-	  return bestMove
-	}
-
-	const { IntToChar, getRowAndColumn, InitialBoard } = __webpack_require__(5)
-
-	module.exports = {
-	  ComputerThinkTimer,
-	  MinMax,
-	  checkmatedValue
-	}
-
-/***/ },
-/* 4 */
-/***/ function(module, exports, __webpack_require__) {
-
-	const {
-	  InitialBoard,
-	  CharToInt,
-	  IntToChar,
-	  PieceNumToType,
-	  Move,
-	  KnightMove,
-	  KingMove,
-	  AdvisorMove,
-	  BishopMove,
-	  RookMove,
-	  CannonMove,
-	  PawnMove,
-	  canAttackByKing,
-	  canAttackByAdvisor,
-	  canAttackByBishop,
-	  canAttackByKnight,
-	  canAttackByRook,
-	  canAttackByCannon,
-	  canAttackByPawn,
-	} = __webpack_require__(5)
-
-	const {
-	  evalWhite,
-	  evalBlack,
-	  evalBlackMove,
-	  evalWhiteMove,
-	  banValue,
-	  drawValue,
-	  nullOkMargin,
-	  nullSafeMargin
-	} = __webpack_require__(6)
-
-	const {
-	  zobristTable,
-	  zobristSide,
-	  Zobrist,
-	  ZobristNode
-	} = __webpack_require__(7)
-
-	const initialFen = 'rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w'
-
-	class Pos {
-	  constructor(fen = initialFen, moveStack = []) {
-	    this.fenToBoard(fen)
-
-	    moveStack.forEach(({ from, to }) => {
-	      const legalMove = this.getLegalMove(from, to)
-	      if (legalMove) {
-	        this.makeMove(legalMove)
-	      } else {
-	        throw new Error('非法的移动')
-	      }
-	    })
-	  }
-
-	  static setToOriginal() {
-	    const pos = new Pos(initialFen)
-	    return pos
-	  }
-
-	  getLegalMove(from, to) {
-	    return this.generateMoves().find((move) => move.from === from && move.to === to)
-	  }
-
-	  clearBoard() {
-	    //没有棋子则为0
-	    this.board = Array.from(Array(256)).map(() => 0)
-	    //棋子被吃掉的为0
-	    this.piece = Array.from(Array(48)).map(() => 0)
-	  }
-
-	  canAttack(piecePos, sideTag) {
-	    //被将攻击
-	    if (canAttackByKing(this, this.piece[sideTag], piecePos)) {
-	      return true
-	    }
-
-	    //被士攻击
-	    for (let i = 1; i <= 2; i++) {
-	      const knightPos = this.piece[sideTag + i]
-	      if (canAttackByKing(this, knightPos, piecePos)) {
-	        return true
-	      }
-	    }
-
-	    //被象攻击
-	    for (let i = 3; i <= 4; i++) {
-	      const BishopPos = this.piece[i + this.sideTag]
-
-	      //马还没被吃掉
-	      if (BishopPos) {
-	        if (canAttackByBishop(this, BishopPos, piecePos)) {
-	          return true
-	        }
-	      }
-	    }
-
-	    //是否被马攻击
-	    for (let i = 5; i <= 6; i++) {
-	      const knightPos = this.piece[i + this.sideTag]
-
-	      //马还没被吃掉
-	      if (knightPos) {
-	        if (canAttackByKnight(this, knightPos, piecePos)) {
-	          return true
-	        }
-	      }
-	    }
-
-	    //是否被车攻击
-	    for (let i = 7; i <= 8; i++) {
-	      const rookPos = this.piece[i + this.sideTag]
-
-	      //车还没被吃掉
-	      if (rookPos) {
-	        if (canAttackByRook(this, rookPos, piecePos)) {
-	          return true
-	        }
-	      }
-	    }
-
-	    //是否被炮攻击
-	    for (let i = 9; i <= 10; i++) {
-	      const cannonPos = this.piece[i + this.sideTag]
-
-	      //炮还没被吃掉
-	      if (cannonPos) {
-	        if (canAttackByCannon(this, cannonPos, piecePos)) {
-	          return true
-	        }
-	      }
-	    }
-
-	    //是否被兵攻击
-	    for (let i = 11; i <= 15; i++) {
-	      const pawnPos = this.piece[i + this.sideTag]
-
-	      //兵还没被吃掉
-	      if (pawnPos) {
-	        if (canAttackByPawn(this, pawnPos, piecePos)) {
-	          return true
-	        }
-	      }
-	    }
-
-	    return false
-	  }
-
-	  isProtect(piecePos) {
-	    //16为红方,32为黑方
-	    const sideTag = this.board[piecePos] & 16 ? 16 : 32
-
-	    return this.canAttack(piecePos, sideTag)
-	  }
-
-	  repValue() {
-	    const status = this.repStatus()
-	    switch (status) {
-	      //双方重复但未将军
-	      case 1:
-	        return drawValue
-	      //我方长将，对我方来说返回一个-ban值
-	      case 3:
-	        return -banValue
-	      //敌方长将，对我方来说返回一个ban值  
-	      case 5:
-	        return banValue
-	      //双方长将
-	      case 7:
-	        return drawValue
-	    }
-	  }
-
-	  repStatus() {
-	    let checkIndex = this.checkStack.length - 2
-	    let zobristIndex = this.zobristStack.length - 2
-	    let moveIndex = this.moveStack.length - 1
-
-	    let selfSide = false
-	    let oppPerpCheck = this.checkStack[this.checkStack.length - 1]
-	    let perpCheck = true
-	    while (zobristIndex >= 0) {
-	      if (this.moveStack[moveIndex].capture) {
-	        return 0
-	      }
-
-	      if (selfSide) {
-	        oppPerpCheck = oppPerpCheck && this.checkStack[checkIndex]
-	        if (this.zobrist.equal(this.zobristStack[zobristIndex])) {
-	          return 1 + (oppPerpCheck ? 4 : 0) + (perpCheck ? 2 : 0)
-	        }
-	      } else {
-	        perpCheck = perpCheck && this.checkStack[checkIndex]
-	      }
-	      selfSide = !selfSide
-	      zobristIndex--
-	      checkIndex--
-	      moveIndex--
-	    }
-
-	    return 0
-	  }
-
-	  //当前回合棋子能否将到对面棋子
-	  canCheck() {
-	    const wKingPos = this.piece[16]
-	    const bKingPos = this.piece[32]
-
-	    const opponentKingPos = this.side ? wKingPos : bKingPos
-	    const sideTag = this.side ? 32 : 16
-
-	    //判断将帅是否照面
-	    if (wKingPos % 16 === bKingPos % 16) {
-	      let isFace = true
-	      for (let middlePiecePos = wKingPos - 16; middlePiecePos !== bKingPos; middlePiecePos -= 16) {
-	        if (this.board[middlePiecePos]) isFace = false
-	      }
-
-	      if (isFace) return true
-	    }
-
-	    return this.canAttack(opponentKingPos, sideTag)
-	  }
-
-	  addPiece(pos, pc) {
-	    this.board[pos] = pc
-	    this.piece[pc] = pos
-	  }
-
-	  //当前颜色的将是否正在被将军
-	  isChecked() {
-	    this.changeSide()
-	    const isChecked = this.canCheck()
-	    this.changeSide()
-	    return isChecked
-	  }
-
-	  changeSide() {
-	    this.side = this.side === 0 ? 1 : 0
-	    this.sideTag = 16 + this.side * 16
-	  }
-
-	  generateMoves(capture = false) {
-	    let moves = []
-
-	    for (let i = 0; i <= 15; i++) {
-	      const pieceIndex = i + this.sideTag
-	      if (!this.piece[pieceIndex]) {
-	        continue
-	      }
-
-	      switch (i) {
-	        case 0:
-	          KingMove(this, moves, this.piece[pieceIndex], capture)
-	          break
-	        case 1:
-	        case 2:
-	          AdvisorMove(this, moves, this.piece[pieceIndex], capture)
-	          break
-	        case 3:
-	        case 4:
-	          BishopMove(this, moves, this.piece[pieceIndex], capture)
-	          break
-	        case 5:
-	        case 6:
-	          KnightMove(this, moves, this.piece[pieceIndex], capture)
-	          break
-	        case 7:
-	        case 8:
-	          RookMove(this, moves, this.piece[pieceIndex], capture)
-	          break
-	        case 9:
-	        case 10:
-	          CannonMove(this, moves, this.piece[pieceIndex], capture)
-	          break
-	        case 11:
-	        case 12:
-	        case 13:
-	        case 14:
-	        case 15:
-	          PawnMove(this, moves, this.piece[pieceIndex], capture)
-	          break
-	      }
-	    }
-	    return moves
-	  }
-
-	  get zobrist() {
-	    return this.zobristStack[this.zobristStack.length - 1]
-	  }
-
-	  movePiece(move) {
-	    //存储移动的棋子
-	    this.moveStack.push(move)
-
-	    //移动棋子
-	    const movedPiece = this.board[move.from]
-	    this.board[move.from] = 0
-	    this.board[move.to] = movedPiece
-	    this.piece[movedPiece] = move.to
-
-	    let newZobrist = this.zobrist
-	    //吃棋子
-	    if (move.capture) {
-	      const capturedPos = this.piece[move.capture]
-	      this.piece[move.capture] = 0
-	    }
-	  }
-
-	  unMovePiece() {
-	    //撤销上一步
-	    const move = this.moveStack.pop()
-
-	    //移动的棋子
-	    const movedPiece = this.board[move.to]
-
-	    //撤销移动棋子
-	    this.board[move.to] = 0
-	    this.board[move.from] = movedPiece
-	    this.piece[movedPiece] = move.from
-
-	    //撤销吃棋子
-	    if (move.capture) {
-	      this.board[move.to] = move.capture
-	      this.piece[move.capture] = move.to
-	    }
-	  }
-
-	  makeMove(move) {
-	    //1. 尝试着走一步 
-	    this.movePiece(move)
-
-	    //2. 走了这一步后会被将军
-	    if (this.isChecked()) {
-	      //撤销这一步
-	      this.unMovePiece()
-	      return false
-	    }
-	    //3. 一步能走的棋
-	    else {
-	      //3.0 改变局面颜色
-	      this.changeSide()
-
-	      const movedPiece = this.board[move.to]
-
-	      //获得上一个移动棋子的颜色
-	      const opponentSide = this.side?0:1
-
-	      //3.1 改变zobrist值
-	      const pieceZobrist = zobristTable[opponentSide][PieceNumToType[movedPiece]][move.from]
-	      const nextPieceZobrist = zobristTable[opponentSide][PieceNumToType[movedPiece]][move.to]
-	      let newZobrist = this.zobrist.xor(pieceZobrist).xor(nextPieceZobrist).xor(zobristSide)
-
-	      //3.1.1 如果被吃子
-	      if (move.capture) {
-	        //zobrist里取消被吃掉的子
-	        newZobrist = newZobrist.xor(zobristTable[this.side][PieceNumToType[move.capture]][move.to])
-	      }
-
-	      //3.1.2
-	      this.zobristStack.push(newZobrist)
-
-	      //3.2 判断当前局面是否被将军
-	      this.checkStack.push(this.isChecked())
-
-	      return true
-	    }
-	  }
-
-	  unMakeMove() {
-	    //1. 取消上一步
-	    this.unMovePiece()
-
-	    //2. 弹出上一个zobrist值
-	    this.zobristStack.pop()
-
-	    //3. 撤销将军判断
-	    this.checkStack.pop()
-
-	    //4. 改变局面颜色
-	    this.changeSide()
-	  }
-
-	  toFen() {
-	    let fen = ''
-	    let blank = 0
-	    for (let i = 3; i <= 12; i++) {
-	      for (let j = 3; j <= 11; j++) {
-	        const pc = this.board[(i << 4) + j]
-
-	        if (pc !== 0) {
-	          if (blank !== 0) {
-	            fen += blank
-	            blank = 0
-	          }
-	          fen += IntToChar(pc)
-	        } else {
-	          blank++
-	        }
-	      }
-	      if (blank !== 0) {
-	        fen += blank
-	        blank = 0
-	      }
-
-	      if (i !== 12) {
-	        fen += "/"
-	      }
-	    }
-
-	    fen += ` ${this.side === 0 ? 'w' : 'b'}`
-	    return fen
-	  }
-
-	  evaluate(side = null) {
-	    if (side === 0) {
-	      return this.whiteScore
-	    } else if (side === 1) {
-	      return this.blackScore
-	    }
-
-	    if (this.side === 0) {
-	      return this.whiteScore - this.blackScore
-	    } else {
-	      return this.blackScore - this.whiteScore
-	    }
-	  }
-
-	  get nullOk() {
-	    return this.evaluate(this.side) >= nullOkMargin
-	  }
-
-	  get nullSafe() {
-	    return this.evaluate(this.side) >= nullSafeMargin
-	  }
-
-	  get whiteScore() {
-	    const whiteMoveScore = 0
-	    const score = evalWhite(this) - whiteMoveScore
-	    return score
-	  }
-
-	  get blackScore() {
-	    const blackMoveScore = 0
-	    const score = evalBlack(this) - blackMoveScore
-	    return score
-	  }
-
-	  initialState(){
-	    this.moveStack = []
-	    this.zobristStack = []
-	    this.checkStack = []
-	  }
-
-	  fenToBoard(fen) {
-	    const pc = {}
-
-	    const fenInfo = fen.split(' ')
-
-	    this.clearBoard()
-	    this.initialState()
-
-	    let row = 3, column = 3
-	    Array.from(fenInfo[0]).forEach((fenChar) => {
-	      if (fenChar === '/') {
-	        row++
-	        column = 3
-	      } else if (!isNaN(Number(fenChar))) {
-	        column += parseInt(fenChar)
-	      } else {
-	        let piece = CharToInt(fenChar)
-	        if (pc[piece] === undefined) {
-	          pc[piece] = 0
-	        }
-
-	        this.addPiece((row << 4) + column, pc[piece] + piece)
-
-	        column++
-	        pc[piece]++
-	      }
-	    })
-
-	    //初始化棋盘颜色
-	    this.side = fenInfo[1] === 'b' ? 1 : 0
-	    this.sideTag = 16 + this.side * 16
-
-	    //初始化局面的zobrist
-	    this.zobristStack = [this.board.reduce((zobrist, piece, index) => {
-	      if (piece) {
-	        return zobrist.xor(zobristTable[this.side][PieceNumToType[piece]][index])
-	      } else {
-	        return zobrist
-	      }
-	    }, new ZobristNode())]
-	    this.checkStack = [this.isChecked()]
-	  }
-	}
-
-	module.exports = Pos
-
-
-
-/***/ },
-/* 5 */
-/***/ function(module, exports) {
-
-	//board
-
-	exports.InitialBoard = [
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 39, 37, 35, 33, 32, 34, 36, 38, 40, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 41, 0, 0, 0, 0, 0, 42, 0, 0, 0, 0, 0,
-	  0, 0, 0, 43, 0, 44, 0, 45, 0, 46, 0, 47, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 27, 0, 28, 0, 29, 0, 30, 0, 31, 0, 0, 0, 0,
-	  0, 0, 0, 0, 25, 0, 0, 0, 0, 0, 26, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 23, 21, 19, 17, 16, 18, 20, 22, 24, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-	]
-
-	const newLegalPosition = [
-	  //white
-	  [
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 0, 0, 0, 0,
-	    0, 0, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 0, 0, 0, 0,
-	    0, 0, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 0, 0, 0, 0,
-	    0, 0, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 0, 0, 0, 0,
-	    0, 0, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 0, 0, 0, 0,
-	    0, 0, 0, 9, 1, 25, 1, 9, 1, 25, 1, 9, 0, 0, 0, 0,
-	    0, 0, 0, 9, 1, 9, 1, 9, 1, 9, 1, 9, 0, 0, 0, 0,
-	    0, 0, 0, 17, 1, 1, 7, 19, 7, 1, 1, 17, 0, 0, 0, 0,
-	    0, 0, 0, 1, 1, 1, 3, 7, 3, 1, 1, 1, 0, 0, 0, 0,
-	    0, 0, 0, 1, 1, 17, 7, 3, 7, 17, 1, 1, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  ],
-
-	  //black
-	  [
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 1, 1, 17, 7, 3, 7, 17, 1, 1, 0, 0, 0, 0,
-	    0, 0, 0, 1, 1, 1, 3, 7, 3, 1, 1, 1, 0, 0, 0, 0,
-	    0, 0, 0, 17, 1, 1, 7, 19, 7, 1, 1, 17, 0, 0, 0, 0,
-	    0, 0, 0, 9, 1, 9, 1, 9, 1, 9, 1, 9, 0, 0, 0, 0,
-	    0, 0, 0, 9, 1, 25, 1, 9, 1, 25, 1, 9, 0, 0, 0, 0,
-	    0, 0, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 0, 0, 0, 0,
-	    0, 0, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 0, 0, 0, 0,
-	    0, 0, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 0, 0, 0, 0,
-	    0, 0, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 0, 0, 0, 0,
-	    0, 0, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  ]
-	]
-
-	//每一个棋子的mask，通过与legalPosition与运算产生棋子的位置表
-	const PositionMask = [2, 4, 16, 1, 1, 1, 8]
-
-	LegalPosition = [
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-	  0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-	  0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-	  0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-	  0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-	  0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-	  0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-	  0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-	  0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-	  0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	]
-
-	console.assert(exports.InitialBoard.length === 256)
-	console.assert(LegalPosition.length === 256)
-
-	//棋子编号到棋子类型编号,分别为帅，士，象，马，车，炮，兵（0，1，2，3，4，5，6，7）
-	exports.PieceNumToType = [
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 6, 6, 6,
-	  0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 6, 6, 6,
-	]
-
-	//棋子编号到棋子名字
-	exports.IntToChar = function (value) {
-	  if (value < 32) {
-	    switch (value) {
-	      case 16: return 'K'
-
-	      case 17:
-	      case 18: return 'A'
-
-	      case 19:
-	      case 20: return 'B'
-
-	      case 21:
-	      case 22: return 'N'
-
-	      case 23:
-	      case 24: return 'R'
-
-	      case 25:
-	      case 26: return 'C'
-
-	      case 27:
-	      case 28:
-	      case 29:
-	      case 30:
-	      case 31: return 'P'
-	    }
-	  } else {
-	    switch (value - 16) {
-	      case 16: return 'k'
-
-	      case 17:
-	      case 18: return 'a'
-
-	      case 19:
-	      case 20: return 'b'
-
-	      case 21:
-	      case 22: return 'n'
-
-	      case 23:
-	      case 24: return 'r'
-
-	      case 25:
-	      case 26: return 'c'
-
-	      case 27:
-	      case 28:
-	      case 29:
-	      case 30:
-	      case 31: return 'p'
-	    }
-	  }
-	}
-
-	//棋子编号到棋子名字
-	exports.CharToInt = function (value) {
-	  switch (value) {
-	    case 'K':
-	      return 16
-	    case 'A':
-	      return 17
-	    case 'B':
-	      return 19
-	    case 'N':
-	      return 21
-	    case 'R':
-	      return 23
-	    case 'C':
-	      return 25
-	    case 'P':
-	      return 27
-
-	    case 'k':
-	      return 32
-	    case 'a':
-	      return 33
-	    case 'b':
-	      return 35
-	    case 'n':
-	      return 37
-	    case 'r':
-	      return 39
-	    case 'c':
-	      return 41
-	    case 'p':
-	      return 43
-	  }
-	}
-
-	exports.getRowAndColumn = function (pos) {
-	  return { row: (pos >> 4) - 2, column: pos % 16 - 3 + 1 }
-	}
-
-	//move
-	exports.Move = class {
-
-	  //wvl 是MVV-LVA得分值,capture是被攻击棋子的编号
-	  constructor(from, to, capture, wvl) {
-	    this.from = from
-	    this.to = to
-	    this.capture = capture
-	    this.wvl = wvl
-	  }
-
-	  equal(move) {
-	    return this.from === move.from && this.to === move.to && this.capture === move.capture
-	  }
-
-	  toString() {
-	    return JSON.stringify({ from: this.from, to: this.to, capture: this.capture, wvl: this.wvl })
-	  }
-	}
-
-	function SaveMove(moves, pos, from, to, capture = false) {
-	  if (pos.board[to]) {
-	    const attackingPiece = pos.board[from]
-	    const attackedPiece = pos.board[to]
-	    moves.push(new exports.Move(from, to, pos.board[to], pos.isProtect(to) ? MvvValues[attackedPiece] - MvvValues[attackingPiece] : MvvValues[attackedPiece]))
-	  } else {
-	    if (capture) {
-	      return
-	    }
-	    moves.push(new exports.Move(from, to))
-	  }
-	}
-
-	const MvvValues = [
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  8, 2, 2, 2, 2, 4, 4, 6, 6, 4, 4, 2, 2, 2, 2, 2,
-	  8, 2, 2, 2, 2, 4, 4, 6, 6, 4, 4, 2, 2, 2, 2, 2
-	]
-
-	//king
-	const KingDir = [-0x10, 0x01, 0x10, -0x01]
-	const KingPosition = [
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	]
-
-	function getPieceSide(pos, piecePos) {
-	  const side = pos.board[piecePos] & 16 ? 0 : 1
-	  const sideTag = (side + 1) * 16
-	  return { side, sideTag }
-	}
-
-	exports.KingMove = function (pos, moves, piecePos, capture = false) {
-	  const movesStartNum = moves.length
-
-	  KingDir.forEach((dir, index) => {
-	    const nextPiecePos = piecePos + dir
-
-	    //在九宫上
-	    // if (KingPosition[nextPiecePos]) {
-	    if (newLegalPosition[pos.side][nextPiecePos] & PositionMask[0]) {
-	      //没有本方棋子
-	      if (!(pos.board[nextPiecePos] & pos.sideTag)) {
-	        //capture=true时只生成吃子走法
-	        SaveMove(moves, pos, piecePos, nextPiecePos, capture)
-	      }
-	    }
-	  })
-
-	  //生成了多少步
-	  return moves.length - movesStartNum
-	}
-
-	exports.canAttackByKing = function (pos, piecePos, nextPiecePos) {
-	  //不在九宫上
-	  if (!(newLegalPosition[getPieceSide(pos, piecePos).side][nextPiecePos] & PositionMask[0])) {
-	    return false
-	  }
-
-	  return KingDir.some((dir, index) => piecePos + dir === nextPiecePos)
-	}
-
-
-	//advisor
-	const AdvisorDir = [-0x11, -0x0f, 0x11, 0x0f]
-	const AdvisorPosition = [
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	]
-
-	exports.AdvisorMove = function (pos, moves, piecePos, capture = false) {
-	  const movesStartNum = moves.length
-
-	  AdvisorDir.forEach((dir, index) => {
-	    const nextPiecePos = piecePos + dir
-
-	    //在九宫上
-	    // if (AdvisorPosition[nextPiecePos]) {
-	    if (newLegalPosition[pos.side][nextPiecePos] & PositionMask[1]) {
-	      //没有本方棋子
-	      if (!(pos.board[nextPiecePos] & pos.sideTag)) {
-	        //capture=true时只生成吃子走法
-	        SaveMove(moves, pos, piecePos, nextPiecePos, capture)
-	      }
-	    }
-	  })
-
-	  //生成了多少步
-	  return moves.length - movesStartNum
-	}
-
-	exports.canAttackByAdvisor = function (pos, piecePos, nextPiecePos) {
-	  //不在九宫上
-	  if (!(newLegalPosition[getPieceSide(pos, piecePos).side][nextPiecePos] & PositionMask[1])) {
-	    return false
-	  }
-
-	  return AdvisorDir.some((dir, index) => piecePos + dir === nextPiecePos)
-	}
-
-	//bishop
-	const BishopDir = [-0x22, -0x1e, 0x22, 0x1e]
-	const BishopCheck = [-0x11, -0x0f, 0x11, 0x0f]
-	const BishopPosition = [
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	]
-
-	exports.BishopMove = function (pos, moves, piecePos, capture = false) {
-	  const movesStartNum = moves.length
-
-	  BishopDir.forEach((dir, index) => {
-	    const nextPiecePos = piecePos + dir
-
-	    //在棋盘上
-	    // if (BishopPosition[nextPiecePos] && ) {
-	    if (newLegalPosition[pos.side][nextPiecePos] & PositionMask[2]) {
-
-	      //不卡象眼
-	      if (pos.board[piecePos + BishopCheck[index]] === 0) {
-	        //没有本方棋子
-	        if (!(pos.board[nextPiecePos] & pos.sideTag)) {
-	          //capture=true时只生成吃子走法
-	          SaveMove(moves, pos, piecePos, nextPiecePos, capture)
-	        }
-	      }
-	    }
-	  })
-
-	  //生成了多少步
-	  return moves.length - movesStartNum
-	}
-
-	exports.canAttackByBishop = function (pos, piecePos, nextPiecePos) {
-	  //不在本方河内
-	  if (!(newLegalPosition[getPieceSide(pos, piecePos).side][nextPiecePos] & PositionMask[2])) {
-	    return false
-	  }
-
-	  return BishopDir.some((dir, index) => piecePos + dir === nextPiecePos && pos.board[piecePos + BishopCheck[index]])
-	}
-
-	//knight
-	const KnightDir = [0x0e, -0x12, -0x21, -0x1f, -0x0e, 0x12, 0x21, 0x1f]
-	const KnightCheck = [-0x01, -0x01, -0x10, -0x10, 0x01, 0x01, 0x10, 0x10]
-	const KnightPosition = LegalPosition
-
-	exports.KnightMove = function (pos, moves, piecePos, capture = false) {
-	  const movesStartNum = moves.length
-
-	  KnightDir.forEach((dir, index) => {
-	    const nextPiecePos = piecePos + dir
-
-	    //在棋盘上
-	    // if (KnightPosition[nextPiecePos]  ) {
-	    if (newLegalPosition[pos.side][nextPiecePos] & PositionMask[3]) {
-	      //不蹩马脚
-	      if (pos.board[piecePos + KnightCheck[index]] === 0) {
-	        //没有本方棋子
-	        if (!(pos.board[nextPiecePos] & pos.sideTag)) {
-	          //capture=true时只生成吃子走法
-	          SaveMove(moves, pos, piecePos, nextPiecePos, capture)
-	        }
-	      }
-	    }
-	  })
-
-	  //生成了多少步
-	  return moves.length - movesStartNum
-	}
-
-	exports.canAttackByKnight = function (pos, piecePos, nextPiecePos) {
-	  return KnightDir.some((dir, index) => {
-	    //在棋盘上
-	    if (newLegalPosition[getPieceSide(pos, piecePos).side][nextPiecePos] & PositionMask[3]) {
-	      //在马的进攻方向上
-	      if (dir + piecePos === nextPiecePos) {
-	        //不蹩马脚
-	        if (pos.board[piecePos + KnightCheck[index]] === 0) {
-	          return true
-	        }
-	      }
-	    }
-	  })
-	}
-
-	//rook
-	const RookDir = [-0x01, -0x10, 0x01, 0x10]
-	const RookPosition = LegalPosition
-
-	exports.RookMove = function (pos, moves, piecePos, capture = false) {
-	  const movesStartNum = moves.length
-
-	  RookDir.forEach((dir, index) => {
-	    let nextPiecePos = piecePos + dir
-
-	    while ((newLegalPosition[pos.side][nextPiecePos] & PositionMask[4]) && pos.board[nextPiecePos] === 0) {
-	      SaveMove(moves, pos, piecePos, nextPiecePos, capture)
-	      nextPiecePos += dir
-	    }
-
-	    //在棋盘上
-	    if (newLegalPosition[pos.side][nextPiecePos] & PositionMask[4]) {
-	      //没有本方棋子
-	      if (!(pos.board[nextPiecePos] & pos.sideTag)) {
-	        //capture=true时只生成吃子走法
-	        SaveMove(moves, pos, piecePos, nextPiecePos, capture)
-	      }
-	    }
-	  })
-
-	  //生成了多少步
-	  return moves.length - movesStartNum
-	}
-
-	exports.canAttackByRook = function (pos, piecePos, nextPiecePos) {
-	  //不在棋盘上
-	  if (!(newLegalPosition[getPieceSide(pos, piecePos).side][nextPiecePos] & PositionMask[4])) {
-	    return false
-	  }
-
-	  let dir
-	  //同一行
-	  if ((nextPiecePos >> 4) === (piecePos >> 4)) {
-	    dir = nextPiecePos > piecePos ? RookDir[2] : RookDir[0]
-	  }
-	  //同一列
-	  else if (nextPiecePos % 16 === piecePos % 16) {
-	    dir = nextPiecePos > piecePos ? RookDir[3] : RookDir[1]
-	  }
-	  else {
-	    return false
-	  }
-
-	  //判断中间是否有棋子
-	  for (let middlePiecePos = piecePos + dir; middlePiecePos !== nextPiecePos; middlePiecePos += dir) {
-	    if (pos.board[middlePiecePos] !== 0) return false
-	  }
-
-	  return true
-	}
-
-	//can
-	const CannonDir = [-0x01, -0x10, 0x01, 0x10]
-	const CannonPosition = LegalPosition
-
-	exports.CannonMove = function (pos, moves, piecePos, capture = false) {
-	  const movesStartNum = moves.length
-
-	  CannonDir.forEach((dir, index) => {
-	    let nextPiecePos = piecePos + dir
-
-	    //查找能到的
-	    while ((newLegalPosition[pos.side][nextPiecePos] & PositionMask[5]) && pos.board[nextPiecePos] === 0) {
-	      //capture=true时只生成吃子走法
-	      SaveMove(moves, pos, piecePos, nextPiecePos, capture)
-
-	      nextPiecePos += dir
-	    }
-
-	    //不在棋盘上
-	    if (!(newLegalPosition[pos.side][nextPiecePos] & PositionMask[5])) {
-	      return
-	    }
-
-	    //查找能吃的
-	    nextPiecePos += dir
-	    while ((newLegalPosition[pos.side][nextPiecePos] & PositionMask[5]) && pos.board[nextPiecePos] === 0) {
-	      nextPiecePos += dir
-	    }
-
-	    //在棋盘上
-	    if (newLegalPosition[pos.side][nextPiecePos] & PositionMask[5]) {
-	      //没有本方棋子
-	      if (!(pos.board[nextPiecePos] & pos.sideTag)) {
-	        //capture=true时只生成吃子走法
-	        SaveMove(moves, pos, piecePos, nextPiecePos, capture)
-	      }
-	    }
-	  })
-
-	  //生成了多少步
-	  return moves.length - movesStartNum
-	}
-
-	exports.canAttackByCannon = function (pos, piecePos, nextPiecePos) {
-	  //不在棋盘上
-	  if (!(newLegalPosition[getPieceSide(pos, piecePos).side][nextPiecePos] & PositionMask[4])) {
-	    return false
-	  }
-
-	  let dir
-	  //同一行
-	  if ((nextPiecePos >> 4) === (piecePos >> 4)) {
-	    dir = nextPiecePos > piecePos ? CannonDir[2] : CannonDir[0]
-	  }
-	  //同一列
-	  else if (nextPiecePos % 16 === piecePos % 16) {
-	    dir = nextPiecePos > piecePos ? CannonDir[3] : CannonDir[1]
-	  }
-	  else {
-	    return false
-	  }
-
-	  let middlePieceNum = 0
-
-	  //判断中间的棋子少于等于1个
-	  for (let middlePiecePos = piecePos + dir; middlePiecePos !== nextPiecePos; middlePiecePos += dir) {
-	    if (pos.board[middlePiecePos] !== 0) {
-	      middlePieceNum++
-	      if (middlePieceNum === 2) return false
-	    }
-	  }
-
-	  if (middlePieceNum === 0) {
-	    return false
-	  }
-	  return true
-	}
-
-
-	//pawn
-	const PawnDir = [
-	  [-0x10, -0x01, 0x01],
-	  [0x10, -0x01, 0x01]
-	]
-	const PawnPostion = [
-	  //white pawn
-	  [
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-	    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-	    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-	    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-	    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-	    0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0,
-	    0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  ],
-
-	  //black pawn
-	  [
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0,
-	    0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0,
-	    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-	    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-	    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-	    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-	    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  ]
-	]
-
-	exports.PawnMove = function (pos, moves, piecePos, capture = false) {
-	  const movesStartNum = moves.length
-	  let thisPawnDir = PawnDir[pos.side]
-	  // let thisPawnPosition = newLegalPosition[pos.side][nextPiecePos] & PositionMask[5]
-
-	  thisPawnDir.forEach((dir, index) => {
-	    const nextPiecePos = piecePos + dir
-
-	    //在兵行动位置棋盘上
-	    if (newLegalPosition[pos.side][nextPiecePos] & PositionMask[6]) {
-	      //没有本方棋子
-	      if (!(pos.board[nextPiecePos] & pos.sideTag)) {
-	        //是否只生成吃子走法
-	        if (capture && pos.board[nextPiecePos]) {
-	          SaveMove(moves, pos, piecePos, nextPiecePos, capture)
-	          return
-	        }
-	        SaveMove(moves, pos, piecePos, nextPiecePos, capture)
-	      }
-	    }
-	  })
-
-	  //生成了多少步
-	  return moves.length - movesStartNum
-	}
-
-	exports.canAttackByPawn = function (pos, piecePos, nextPiecePos) {
-	  const side = getPieceSide(pos, piecePos).side
-	  return PawnDir[side].some((dir, index) => {
-	    //在兵行动位置棋盘上
-	    if (newLegalPosition[side][nextPiecePos] & PositionMask[6]) {
-	      //在兵进攻的方向上
-	      if (piecePos + dir === nextPiecePos) {
-	        return true
-	      }
-	    }
-	  })
-	}
-
-/***/ },
-/* 6 */
-/***/ function(module, exports, __webpack_require__) {
-
-	
-	const {
-	  PieceNumToType,
-	  KnightMove,
-	  KingMove,
-	  AdvisorMove,
-	  BishopMove,
-	  RookMove,
-	  CannonMove,
-	  PawnMove,
-	} = __webpack_require__(5)
-
-	// const WhitePositionValues = [
-	//   [	// 帅
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 10, 10, 10, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 15, 20, 15, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-	//   ], [	// 仕
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 30, 0, 30, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 22, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 30, 0, 30, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-	//   ], [	// 相
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 25, 0, 0, 0, 25, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 20, 0, 0, 0, 35, 0, 0, 0, 20, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 30, 0, 0, 0, 30, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-	//   ], [	// 马
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 70, 80, 90, 80, 70, 80, 90, 80, 70, 0, 0, 0, 0,
-	//     0, 0, 0, 80, 110, 125, 90, 70, 90, 125, 110, 80, 0, 0, 0, 0,
-	//     0, 0, 0, 90, 100, 120, 125, 120, 125, 120, 100, 90, 0, 0, 0, 0,
-	//     0, 0, 0, 90, 100, 120, 130, 110, 130, 120, 100, 90, 0, 0, 0, 0,
-	//     0, 0, 0, 90, 110, 110, 120, 100, 120, 110, 110, 90, 0, 0, 0, 0,
-	//     0, 0, 0, 90, 100, 100, 110, 100, 110, 100, 100, 90, 0, 0, 0, 0,
-	//     0, 0, 0, 80, 90, 100, 100, 90, 100, 100, 90, 80, 0, 0, 0, 0,
-	//     0, 0, 0, 80, 80, 90, 90, 80, 90, 90, 80, 80, 0, 0, 0, 0,
-	//     0, 0, 0, 70, 75, 75, 70, 50, 70, 75, 75, 70, 0, 0, 0, 0,
-	//     0, 0, 0, 60, 70, 75, 70, 60, 70, 75, 70, 60, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-	//   ], [	// 车
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 160, 170, 160, 150, 150, 150, 160, 170, 160, 0, 0, 0, 0,
-	//     0, 0, 0, 170, 180, 170, 190, 250, 190, 170, 180, 170, 0, 0, 0, 0,
-	//     0, 0, 0, 170, 190, 200, 220, 240, 220, 200, 190, 170, 0, 0, 0, 0,
-	//     0, 0, 0, 180, 220, 210, 240, 250, 240, 210, 220, 180, 0, 0, 0, 0,
-	//     0, 0, 0, 180, 220, 210, 240, 250, 240, 210, 220, 180, 0, 0, 0, 0,
-	//     0, 0, 0, 180, 220, 210, 240, 250, 240, 210, 220, 180, 0, 0, 0, 0,
-	//     0, 0, 0, 170, 190, 180, 220, 240, 220, 200, 190, 170, 0, 0, 0, 0,
-	//     0, 0, 0, 170, 180, 170, 170, 160, 170, 170, 180, 170, 0, 0, 0, 0,
-	//     0, 0, 0, 160, 170, 160, 160, 150, 160, 160, 170, 160, 0, 0, 0, 0,
-	//     0, 0, 0, 150, 160, 150, 160, 150, 160, 150, 160, 150, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-	//   ], [	// 炮
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 125, 130, 100, 70, 60, 70, 100, 130, 125, 0, 0, 0, 0,
-	//     0, 0, 0, 110, 125, 100, 70, 60, 70, 100, 125, 110, 0, 0, 0, 0,
-	//     0, 0, 0, 100, 120, 90, 80, 80, 80, 90, 120, 100, 0, 0, 0, 0,
-	//     0, 0, 0, 90, 110, 90, 110, 130, 110, 90, 110, 90, 0, 0, 0, 0,
-	//     0, 0, 0, 90, 110, 90, 110, 130, 110, 90, 110, 90, 0, 0, 0, 0,
-	//     0, 0, 0, 90, 100, 90, 110, 130, 110, 90, 100, 90, 0, 0, 0, 0,
-	//     0, 0, 0, 90, 100, 90, 90, 110, 90, 90, 100, 90, 0, 0, 0, 0,
-	//     0, 0, 0, 90, 100, 80, 80, 70, 80, 80, 100, 90, 0, 0, 0, 0,
-	//     0, 0, 0, 80, 90, 80, 70, 65, 70, 80, 90, 80, 0, 0, 0, 0,
-	//     0, 0, 0, 80, 90, 80, 70, 60, 70, 80, 90, 80, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-	//   ], [	// 兵
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 10, 10, 10, 20, 25, 20, 10, 10, 10, 0, 0, 0, 0,
-	//     0, 0, 0, 25, 30, 40, 50, 60, 50, 40, 30, 25, 0, 0, 0, 0,
-	//     0, 0, 0, 25, 30, 30, 40, 40, 40, 30, 30, 25, 0, 0, 0, 0,
-	//     0, 0, 0, 20, 25, 25, 30, 30, 30, 25, 25, 20, 0, 0, 0, 0,
-	//     0, 0, 0, 15, 20, 20, 20, 20, 20, 20, 20, 15, 0, 0, 0, 0,
-	//     0, 0, 0, 10, 0, 15, 0, 15, 0, 15, 0, 10, 0, 0, 0, 0,
-	//     0, 0, 0, 10, 0, 10, 0, 15, 0, 10, 0, 10, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-	//   ]
-	// ]
-
-	// const BlackPositionValues = [
-	//   [	// 帅
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 15, 20, 15, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 10, 10, 10, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-	//   ], [	// 仕
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 30, 0, 30, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 22, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 30, 0, 30, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-	//   ], [	// 相
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 30, 0, 0, 0, 30, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 20, 0, 0, 0, 35, 0, 0, 0, 20, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 25, 0, 0, 0, 25, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-	//   ], [	// 马
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 60, 70, 75, 70, 60, 70, 75, 70, 60, 0, 0, 0, 0,
-	//     0, 0, 0, 70, 75, 75, 70, 50, 70, 75, 75, 70, 0, 0, 0, 0,
-	//     0, 0, 0, 80, 80, 90, 90, 80, 90, 90, 80, 80, 0, 0, 0, 0,
-	//     0, 0, 0, 80, 90, 100, 100, 90, 100, 100, 90, 80, 0, 0, 0, 0,
-	//     0, 0, 0, 90, 100, 100, 110, 100, 110, 100, 100, 90, 0, 0, 0, 0,
-	//     0, 0, 0, 90, 110, 110, 120, 100, 120, 110, 110, 90, 0, 0, 0, 0,
-	//     0, 0, 0, 90, 100, 120, 130, 110, 130, 120, 100, 90, 0, 0, 0, 0,
-	//     0, 0, 0, 90, 100, 120, 125, 120, 125, 120, 100, 90, 0, 0, 0, 0,
-	//     0, 0, 0, 80, 110, 125, 90, 70, 90, 125, 110, 80, 0, 0, 0, 0,
-	//     0, 0, 0, 70, 80, 90, 80, 70, 80, 90, 80, 70, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-	//   ], [	// 车
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 150, 160, 150, 160, 150, 160, 150, 160, 150, 0, 0, 0, 0,
-	//     0, 0, 0, 160, 170, 160, 160, 150, 160, 160, 170, 160, 0, 0, 0, 0,
-	//     0, 0, 0, 170, 180, 170, 170, 160, 170, 170, 180, 170, 0, 0, 0, 0,
-	//     0, 0, 0, 170, 190, 200, 220, 240, 220, 180, 190, 170, 0, 0, 0, 0,
-	//     0, 0, 0, 180, 220, 210, 240, 250, 240, 210, 220, 180, 0, 0, 0, 0,
-	//     0, 0, 0, 180, 220, 210, 240, 250, 240, 210, 220, 180, 0, 0, 0, 0,
-	//     0, 0, 0, 180, 220, 210, 240, 250, 240, 210, 220, 180, 0, 0, 0, 0,
-	//     0, 0, 0, 170, 190, 200, 220, 240, 220, 200, 190, 170, 0, 0, 0, 0,
-	//     0, 0, 0, 170, 180, 170, 190, 250, 190, 170, 180, 170, 0, 0, 0, 0,
-	//     0, 0, 0, 160, 170, 160, 150, 150, 150, 160, 170, 160, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-	//   ], [	// 炮
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 80, 90, 80, 70, 60, 70, 80, 90, 80, 0, 0, 0, 0,
-	//     0, 0, 0, 80, 90, 80, 70, 65, 70, 80, 90, 80, 0, 0, 0, 0,
-	//     0, 0, 0, 90, 100, 80, 80, 70, 80, 80, 100, 90, 0, 0, 0, 0,
-	//     0, 0, 0, 90, 100, 90, 90, 110, 90, 90, 100, 90, 0, 0, 0, 0,
-	//     0, 0, 0, 90, 100, 90, 110, 130, 110, 90, 100, 90, 0, 0, 0, 0,
-	//     0, 0, 0, 90, 110, 90, 110, 130, 110, 90, 110, 90, 0, 0, 0, 0,
-	//     0, 0, 0, 90, 110, 90, 110, 130, 110, 90, 110, 90, 0, 0, 0, 0,
-	//     0, 0, 0, 100, 120, 90, 80, 80, 80, 90, 120, 100, 0, 0, 0, 0,
-	//     0, 0, 0, 110, 125, 100, 70, 60, 70, 100, 125, 110, 0, 0, 0, 0,
-	//     0, 0, 0, 125, 130, 100, 70, 60, 70, 100, 130, 125, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-	//   ], [	// 兵
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 10, 0, 10, 0, 15, 0, 10, 0, 10, 0, 0, 0, 0,
-	//     0, 0, 0, 10, 0, 15, 0, 15, 0, 15, 0, 10, 0, 0, 0, 0,
-	//     0, 0, 0, 15, 20, 20, 20, 20, 20, 20, 20, 15, 0, 0, 0, 0,
-	//     0, 0, 0, 20, 25, 25, 30, 30, 30, 25, 25, 20, 0, 0, 0, 0,
-	//     0, 0, 0, 25, 30, 30, 40, 40, 40, 30, 30, 25, 0, 0, 0, 0,
-	//     0, 0, 0, 25, 30, 40, 50, 60, 50, 40, 30, 25, 0, 0, 0, 0,
-	//     0, 0, 0, 10, 10, 10, 20, 25, 20, 10, 10, 10, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-	//   ]
-	// ]
-
-	const WhitePositionValues = [
-	  [	// 帅（与兵合并）
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 9, 9, 9, 11, 13, 11, 9, 9, 9, 0, 0, 0, 0,
-	    0, 0, 0, 19, 24, 34, 42, 44, 42, 34, 24, 19, 0, 0, 0, 0,
-	    0, 0, 0, 19, 24, 32, 37, 37, 37, 32, 24, 19, 0, 0, 0, 0,
-	    0, 0, 0, 19, 23, 27, 29, 30, 29, 27, 23, 19, 0, 0, 0, 0,
-	    0, 0, 0, 14, 18, 20, 27, 29, 27, 20, 18, 14, 0, 0, 0, 0,
-	    0, 0, 0, 7, 0, 13, 0, 16, 0, 13, 0, 7, 0, 0, 0, 0,
-	    0, 0, 0, 7, 0, 7, 0, 15, 0, 7, 0, 7, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 11, 15, 11, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  ], [	// 仕
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 20, 0, 0, 0, 20, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 18, 0, 0, 20, 23, 20, 0, 0, 18, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 23, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 20, 20, 0, 20, 20, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  ], [	// 相
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 20, 0, 0, 0, 20, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 18, 0, 0, 20, 23, 20, 0, 0, 18, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 23, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 20, 20, 0, 20, 20, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  ], [	// 马
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 90, 90, 90, 96, 90, 96, 90, 90, 90, 0, 0, 0, 0,
-	    0, 0, 0, 90, 96, 103, 97, 94, 97, 103, 96, 90, 0, 0, 0, 0,
-	    0, 0, 0, 92, 98, 99, 103, 99, 103, 99, 98, 92, 0, 0, 0, 0,
-	    0, 0, 0, 93, 108, 100, 107, 100, 107, 100, 108, 93, 0, 0, 0, 0,
-	    0, 0, 0, 90, 100, 99, 103, 104, 103, 99, 100, 90, 0, 0, 0, 0,
-	    0, 0, 0, 90, 98, 101, 102, 103, 102, 101, 98, 90, 0, 0, 0, 0,
-	    0, 0, 0, 92, 94, 98, 95, 98, 95, 98, 94, 92, 0, 0, 0, 0,
-	    0, 0, 0, 93, 92, 94, 95, 92, 95, 94, 92, 93, 0, 0, 0, 0,
-	    0, 0, 0, 85, 90, 92, 93, 78, 93, 92, 90, 85, 0, 0, 0, 0,
-	    0, 0, 0, 88, 85, 90, 88, 90, 88, 90, 85, 88, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  ], [	// 车
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 206, 208, 207, 213, 214, 213, 207, 208, 206, 0, 0, 0, 0,
-	    0, 0, 0, 206, 212, 209, 216, 233, 216, 209, 212, 206, 0, 0, 0, 0,
-	    0, 0, 0, 206, 208, 207, 214, 216, 214, 207, 208, 206, 0, 0, 0, 0,
-	    0, 0, 0, 206, 213, 213, 216, 216, 216, 213, 213, 206, 0, 0, 0, 0,
-	    0, 0, 0, 208, 211, 211, 214, 215, 214, 211, 211, 208, 0, 0, 0, 0,
-	    0, 0, 0, 208, 212, 212, 214, 215, 214, 212, 212, 208, 0, 0, 0, 0,
-	    0, 0, 0, 204, 209, 204, 212, 214, 212, 204, 209, 204, 0, 0, 0, 0,
-	    0, 0, 0, 198, 208, 204, 212, 212, 212, 204, 208, 198, 0, 0, 0, 0,
-	    0, 0, 0, 200, 208, 206, 212, 200, 212, 206, 208, 200, 0, 0, 0, 0,
-	    0, 0, 0, 194, 206, 204, 212, 200, 212, 204, 206, 194, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  ], [	// 炮
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 100, 100, 96, 91, 90, 91, 96, 100, 100, 0, 0, 0, 0,
-	    0, 0, 0, 98, 98, 96, 92, 89, 92, 96, 98, 98, 0, 0, 0, 0,
-	    0, 0, 0, 97, 97, 96, 91, 92, 91, 96, 97, 97, 0, 0, 0, 0,
-	    0, 0, 0, 96, 99, 99, 98, 100, 98, 99, 99, 96, 0, 0, 0, 0,
-	    0, 0, 0, 96, 96, 96, 96, 100, 96, 96, 96, 96, 0, 0, 0, 0,
-	    0, 0, 0, 95, 96, 99, 96, 100, 96, 99, 96, 95, 0, 0, 0, 0,
-	    0, 0, 0, 96, 96, 96, 96, 96, 96, 96, 96, 96, 0, 0, 0, 0,
-	    0, 0, 0, 97, 96, 100, 99, 101, 99, 100, 96, 97, 0, 0, 0, 0,
-	    0, 0, 0, 96, 97, 98, 98, 98, 98, 98, 97, 96, 0, 0, 0, 0,
-	    0, 0, 0, 96, 96, 97, 99, 99, 99, 97, 96, 96, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  ], [	// 兵（与帅合并）
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 9, 9, 9, 11, 13, 11, 9, 9, 9, 0, 0, 0, 0,
-	    0, 0, 0, 19, 24, 34, 42, 44, 42, 34, 24, 19, 0, 0, 0, 0,
-	    0, 0, 0, 19, 24, 32, 37, 37, 37, 32, 24, 19, 0, 0, 0, 0,
-	    0, 0, 0, 19, 23, 27, 29, 30, 29, 27, 23, 19, 0, 0, 0, 0,
-	    0, 0, 0, 14, 18, 20, 27, 29, 27, 20, 18, 14, 0, 0, 0, 0,
-	    0, 0, 0, 7, 0, 13, 0, 16, 0, 13, 0, 7, 0, 0, 0, 0,
-	    0, 0, 0, 7, 0, 7, 0, 15, 0, 7, 0, 7, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 11, 15, 11, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  ],
-	]
-
-	const BlackPositionValues = WhitePositionValues.map((board) =>
-	  board.map((piecePosScore, index, array) => {
-	    if (index % 16 === 15) {
-	      return index
-	    }
-	    const mirrorPos = 254 - index
-	    return array[mirrorPos]
-	  }))
-
-	const PositionValues = [
-	  //white
-	  WhitePositionValues,
-
-	  //black
-	  BlackPositionValues
-	]
-
-	exports.maxDepth = 200
-	exports.unknownValue = 1000000000
-	exports.checkmatedValue = 1000000
-	exports.winValue = exports.checkmatedValue - exports.maxDepth
-	exports.banValue = exports.checkmatedValue - exports.maxDepth + 100
-	exports.drawValue = 20
-	exports.nullOkMargin = 200
-	exports.nullSafeMargin = 400
-
-
-	// const PositionValues = 
-	// [
-	// 	[
-	// 		[ // ˧(��)
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  1,  1,  1,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0, 10, 10, 10,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0, 15, 20, 15,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
-	//     ], 
-	// 		[ // ��(ʿ)
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0, 30,  0, 30,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0, 22,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0, 30,  0, 30,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
-	//     ], 
-	// 		[ // ��(��)
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0, 25,  0,  0,  0, 25,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0, 20,  0,  0,  0, 35,  0,  0,  0, 20,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0, 30,  0,  0,  0, 30,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
-	//     ], 
-	// 		[// ��
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0, 70, 80, 90, 80, 70, 80, 90, 80, 70,  0,  0,  0,  0,
-	// 			0,  0,  0, 80,110,125, 90, 70, 90,125,110, 80,  0,  0,  0,  0,
-	// 			0,  0,  0, 90,100,120,125,120,125,120,100, 90,  0,  0,  0,  0,
-	// 			0,  0,  0, 90,100,120,130,110,130,120,100, 90,  0,  0,  0,  0,
-	// 			0,  0,  0, 90,110,110,120,100,120,110,110, 90,  0,  0,  0,  0,
-	// 			0,  0,  0, 90,100,100,110,100,110,100,100, 90,  0,  0,  0,  0,
-	// 			0,  0,  0, 80, 90,100,100, 90,100,100, 90, 80,  0,  0,  0,  0,
-	// 			0,  0,  0, 80, 80, 90, 90, 80, 90, 90, 80, 80,  0,  0,  0,  0,
-	// 			0,  0,  0, 70, 75, 75, 70, 50, 70, 75, 75, 70,  0,  0,  0,  0,
-	// 			0,  0,  0, 60, 70, 75, 70, 60, 70, 75, 70, 60,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
-	//     ],
-
-	// 		[ // ��
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,160,170,160,150,150,150,160,170,160,  0,  0,  0,  0,
-	// 			0,  0,  0,170,180,170,190,250,190,170,180,170,  0,  0,  0,  0,
-	// 			0,  0,  0,170,190,200,220,240,220,200,190,170,  0,  0,  0,  0,
-	// 			0,  0,  0,180,220,210,240,250,240,210,220,180,  0,  0,  0,  0,
-	// 			0,  0,  0,180,220,210,240,250,240,210,220,180,  0,  0,  0,  0,
-	// 			0,  0,  0,180,220,210,240,250,240,210,220,180,  0,  0,  0,  0,
-	// 			0,  0,  0,170,190,180,220,240,220,200,190,170,  0,  0,  0,  0,
-	// 			0,  0,  0,170,180,170,170,160,170,170,180,170,  0,  0,  0,  0,
-	// 			0,  0,  0,160,170,160,160,150,160,160,170,160,  0,  0,  0,  0,
-	// 			0,  0,  0,150,160,150,160,150,160,150,160,150,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
-	// 		], 
-	// 		[ // ��
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,125,130,100, 70, 60, 70,100,130,125,  0,  0,  0,  0,
-	// 			0,  0,  0,110,125,100, 70, 60, 70,100,125,110,  0,  0,  0,  0,
-	// 			0,  0,  0,100,120, 90, 80, 80, 80, 90,120,100,  0,  0,  0,  0,
-	// 			0,  0,  0, 90,110, 90,110,130,110, 90,110, 90,  0,  0,  0,  0,
-	// 			0,  0,  0, 90,110, 90,110,130,110, 90,110, 90,  0,  0,  0,  0,
-	// 			0,  0,  0, 90,100, 90,110,130,110, 90,100, 90,  0,  0,  0,  0,
-	// 			0,  0,  0, 90,100, 90, 90,110, 90, 90,100, 90,  0,  0,  0,  0,
-	// 			0,  0,  0, 90,100, 80, 80, 70, 80, 80,100, 90,  0,  0,  0,  0,
-	// 			0,  0,  0, 80, 90, 80, 70, 65, 70, 80, 90, 80,  0,  0,  0,  0,
-	// 			0,  0,  0, 80, 90, 80, 70, 60, 70, 80, 90, 80,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
-	//     ], 
-	// 		[ // ��(��)
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0, 10, 10, 10, 20, 25, 20, 10, 10, 10,  0,  0,  0,  0,
-	// 			0,  0,  0, 25, 30, 40, 50, 60, 50, 40, 30, 25,  0,  0,  0,  0,
-	// 			0,  0,  0, 25, 30, 30, 40, 40, 40, 30, 30, 25,  0,  0,  0,  0,
-	// 			0,  0,  0, 20, 25, 25, 30, 30, 30, 25, 25, 20,  0,  0,  0,  0,
-	// 			0,  0,  0, 15, 20, 20, 20, 20, 20, 20, 20, 15,  0,  0,  0,  0,
-	// 			0,  0,  0, 10,  0, 15,  0, 15,  0, 15,  0, 10,  0,  0,  0,  0,
-	// 			0,  0,  0, 10,  0, 10,  0, 15,  0, 10,  0, 10,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
-	//     ] 
-	//   ],
-	// 	[
-	// 		[//�ڽ�
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0, 15, 20, 15,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0, 10, 10, 10,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  1,  1,  1,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
-	// 		],
-	// 		[//��ʿ
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0, 30,  0, 30,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0, 22,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0, 30,  0, 30,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0			
-	//     ],
-	// 		[//����
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0, 30,  0,  0,  0, 30,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0, 20,  0,  0,  0, 35,  0,  0,  0, 20,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0, 25,  0,  0,  0, 25,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
-	// 		],
-	// 		[//����
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0, 60, 70, 75, 70, 60, 70, 75, 70, 60,  0,  0,  0,  0,
-	// 			0,  0,  0, 70, 75, 75, 70, 50, 70, 75, 75, 70,  0,  0,  0,  0,
-	// 			0,  0,  0, 80, 80, 90, 90, 80, 90, 90, 80, 80,  0,  0,  0,  0,
-	// 			0,  0,  0, 80, 90,100,100, 90,100,100, 90, 80,  0,  0,  0,  0,
-	// 			0,  0,  0, 90,100,100,110,100,110,100,100, 90,  0,  0,  0,  0,
-	// 			0,  0,  0, 90,110,110,120,100,120,110,110, 90,  0,  0,  0,  0,
-	// 			0,  0,  0, 90,100,120,130,110,130,120,100, 90,  0,  0,  0,  0,
-	// 			0,  0,  0, 90,100,120,125,120,125,120,100, 90,  0,  0,  0,  0,
-	// 			0,  0,  0, 80,110,125, 90, 70, 90,125,110, 80,  0,  0,  0,  0,
-	// 			0,  0,  0, 70, 80, 90, 80, 70, 80, 90, 80, 70,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
-	//     ],
-	// 		[//�ڳ�
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,150,160,150,160,150,160,150,160,150,  0,  0,  0,  0,
-	// 			0,  0,  0,160,170,160,160,150,160,160,170,160,  0,  0,  0,  0,
-	// 			0,  0,  0,170,180,170,170,160,170,170,180,170,  0,  0,  0,  0,
-	// 			0,  0,  0,170,190,200,220,240,220,180,190,170,  0,  0,  0,  0,
-	// 			0,  0,  0,180,220,210,240,250,240,210,220,180,  0,  0,  0,  0,
-	// 			0,  0,  0,180,220,210,240,250,240,210,220,180,  0,  0,  0,  0,
-	// 			0,  0,  0,180,220,210,240,250,240,210,220,180,  0,  0,  0,  0,
-	// 			0,  0,  0,170,190,200,220,240,220,200,190,170,  0,  0,  0,  0,
-	// 			0,  0,  0,170,180,170,190,250,190,170,180,170,  0,  0,  0,  0,
-	// 			0,  0,  0,160,170,160,150,150,150,160,170,160,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
-	//     ],
-	// 		[//����
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0, 80, 90, 80, 70, 60, 70, 80, 90, 80,  0,  0,  0,  0,
-	// 			0,  0,  0, 80, 90, 80, 70, 65, 70, 80, 90, 80,  0,  0,  0,  0,
-	// 			0,  0,  0, 90,100, 80, 80, 70, 80, 80,100, 90,  0,  0,  0,  0,
-	// 			0,  0,  0, 90,100, 90, 90,110, 90, 90,100, 90,  0,  0,  0,  0,
-	// 			0,  0,  0, 90,100, 90,110,130,110, 90,100, 90,  0,  0,  0,  0,
-	// 			0,  0,  0, 90,110, 90,110,130,110, 90,110, 90,  0,  0,  0,  0,
-	// 			0,  0,  0, 90,110, 90,110,130,110, 90,110, 90,  0,  0,  0,  0,
-	// 			0,  0,  0,100,120, 90, 80, 80, 80, 90,120,100,  0,  0,  0,  0,
-	// 			0,  0,  0,110,125,100, 70, 60, 70,100,125,110,  0,  0,  0,  0,
-	// 			0,  0,  0,125,130,100, 70, 60, 70,100,130,125,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
-	//     ],
-	// 		[//�ڱ�
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0, 10,  0, 10,  0, 15,  0, 10,  0, 10,  0,  0,  0,  0,
-	// 			0,  0,  0, 10,  0, 15,  0, 15,  0, 15,  0, 10,  0,  0,  0,  0,
-	// 			0,  0,  0, 15, 20, 20, 20, 20, 20, 20, 20, 15,  0,  0,  0,  0,
-	// 			0,  0,  0, 20, 25, 25, 30, 30, 30, 25, 25, 20,  0,  0,  0,  0,
-	// 			0,  0,  0, 25, 30, 30, 40, 40, 40, 30, 30, 25,  0,  0,  0,  0,
-	// 			0,  0,  0, 25, 30, 40, 50, 60, 50, 40, 30, 25,  0,  0,  0,  0,
-	// 			0,  0,  0, 10, 10, 10, 20, 25, 20, 10, 10, 10,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
-	//     ]
-	//   ]
-	// ]
-
-
-	//棋子编号，对应的灵敏度得分
-	const PieceNumToMoveScore = [
-	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	  2, 2, 2, 2, 2, 5, 5, 4, 4, 3, 3, 2, 2, 2, 2, 2,
-	  2, 2, 2, 2, 2, 5, 5, 4, 4, 3, 3, 2, 2, 2, 2, 2,
-	]
-
-	//获得红棋棋子位置的得分
-	exports.evalWhite = function (pos) {
-	  let wValue = 0
-	  for (let i = 16; i < 32; i++) {
-	    //没被吃
-	    if (pos.piece[i]) {
-	      wValue += PositionValues[0][PieceNumToType[i]][pos.piece[i]]
-	    }
-	  }
-
-	  return wValue
-	}
-
-	//获得黑棋棋子位置的得分
-	exports.evalBlack = function (pos) {
-	  let bValue = 0
-	  for (let i = 32; i < 48; i++) {
-	    //没被吃
-	    if (pos.piece[i]) {
-	      bValue += PositionValues[1][PieceNumToType[i]][pos.piece[i]]
-	    }
-	  }
-
-	  return bValue
-	}
-
-	function evalMove(pos, sideTag) {
-	  const moves = []
-	  let moveValue = 0
-
-	  //帅
-	  const kingPos = pos.piece[sideTag]
-	  moveValue += KingMove(pos, moves, kingPos) * PieceNumToMoveScore[sideTag]
-
-	  //士
-	  for (let i = 1; i <= 2; i++) {
-	    const advisorPos = pos.piece[sideTag + i]
-	    moveValue += AdvisorMove(pos, moves, advisorPos) * PieceNumToMoveScore[sideTag + i]
-	  }
-
-	  //象
-	  for (let i = 3; i <= 4; i++) {
-	    const bishopPos = pos.piece[sideTag + i]
-	    moveValue += BishopMove(pos, moves, bishopPos) * PieceNumToMoveScore[sideTag + i]
-	  }
-
-	  //马
-	  for (let i = 5; i <= 6; i++) {
-	    const knightPos = pos.piece[sideTag + i]
-	    moveValue += KnightMove(pos, moves, knightPos) * PieceNumToMoveScore[sideTag + i]
-	  }
-
-	  //车
-	  for (let i = 7; i <= 8; i++) {
-	    const rookPos = pos.piece[sideTag + i]
-	    moveValue += RookMove(pos, moves, rookPos) * PieceNumToMoveScore[sideTag + i]
-	  }
-
-	  //炮
-	  for (let i = 9; i <= 10; i++) {
-	    const cannonPos = pos.piece[sideTag + i]
-	    moveValue += CannonMove(pos, moves, cannonPos) * PieceNumToMoveScore[sideTag + i]
-	  }
-
-	  //兵
-	  for (let i = 11; i <= 15; i++) {
-	    const pawnPos = pos.piece[sideTag + i]
-	    moveValue += PawnMove(pos, moves, pawnPos) * PieceNumToMoveScore[sideTag + i]
-	  }
-
-	  return moveValue
-	}
-
-	exports.evalWhiteMove = function (pos) {
-	  let isChange = false
-
-	  if (pos.side === 1) {
-	    isChange = true
-	    pos.changeSide()
-	  }
-	  const moveValue = evalMove(pos, 16)
-
-	  if (isChange) {
-	    pos.changeSide()
-	  }
-
-	  return moveValue
-	}
-
-	exports.evalBlackMove = function (pos) {
-	  let isChange = false
-
-	  if (pos.side === 0) {
-	    isChange = true
-	    pos.changeSide()
-	  }
-	  const moveValue = evalMove(pos, 32)
-
-	  if (isChange) {
-	    pos.changeSide()
-	  }
-
-	  return moveValue
-	}
-
-/***/ },
-/* 7 */
-/***/ function(module, exports, __webpack_require__) {
-
-	const { unknownValue, winValue, banValue, drawValue, checkmatedValue } = __webpack_require__(6)
-
-	const hashAlpha = 0
-	const hashExact = 1
-	const hashBeta = 2
-
-	const zobristFracMax = Math.pow(2, 16) - 1
-	const zobristFracMax2 = Math.pow(2, 32) - 1
-
-	function rand16() {
-	  return Math.floor(Math.random() * (zobristFracMax + 1))
-	}
-
-	class Zobrist {
-	  constructor(first = 0, second = 0, thrid = 0, last = 0) {
-	    this.first = first
-	    this.second = second
-	    this.thrid = thrid
-	    this.last = last
-	  }
-
-	  and(number) {
-	    if (number > zobristFracMax) {
-	      const last = this.last & (number & zobristFracMax)
-	      const thrid = this.thrid & (number >> 16)
-	      return (thrid << 16) + last
-	    } else {
-	      return this.last & number
-	    }
-	  }
-
-	  xor(zobrist) {
-	    return new Zobrist(zobrist.first ^ this.first, zobrist.second ^ this.second, zobrist.thrid ^ this.thrid, zobrist.last ^ this.last)
-	  }
-
-	  equal(zobrist) {
-	    return this.first === zobrist.first && this.second === zobrist.second && this.thrid === zobrist.thrid && this.last === zobrist.last
-	  }
-	}
-
-	function generateNoEmptyZobirstNode() {
-	  const key = new Zobrist(rand16(), rand16(), rand16(), rand16())
-	  const check = new Zobrist(rand16(), rand16(), rand16(), rand16())
-	  if (check.equal(new Zobrist())) {
-	    return generateNoEmptyZobirstNode()
-	  }
-	  return new ZobristNode(key, check)
-	}
-
-	//每种棋子在棋盘上生成的zobrist值
-	function initZobristTable() {
-	  //格式为：zobristTable[side][pieceTypeNum][position]
-
-	  let zobristTable = []
-
-	  for (let k = 0; k < 2; k++) {
-	    zobristTable[k] = []
-	    for (let i = 0; i < 7; i++) {
-	      zobristTable[k][i] = []
-	      for (let j = 0; j < 256; j++) {
-	        zobristTable[k][i][j] = generateNoEmptyZobirstNode()
-	      }
-	    }
-	  }
-
-	  return zobristTable
-	}
-
-	function initZobristSide() {
-	  return generateNoEmptyZobirstNode()
-	}
-
-	//一个新的局面的zobrist值
-	class ZobristNode {
-	  constructor(key = new Zobrist(), check = new Zobrist()) {
-	    this.key = key
-	    this.check = check
-	  }
-
-	  xor(zobristNode) {
-	    return new ZobristNode(zobristNode.key.xor(this.key), zobristNode.check.xor(this.check))
-	  }
-
-	  and(zobristNode) {
-	    return new ZobristNode(zobristNode.key.and(this.key), zobristNode.check.and(this.check))
-	  }
-
-	  equal(zobristNode) {
-	    return this.check.equal(zobristNode.check)
-	  }
-	}
-
-	//存储一个局面的value
-	class HashNode {
-	  constructor(zobristNode = new ZobristNode(), value = unknownValue, downwardDepth = 0, flag = hashExact, mv) {
-	    this.zobristNode = zobristNode
-	    this.value = value
-	    this.downwardDepth = downwardDepth
-	    this.flag = flag
-	    this.mv = mv
-	  }
-	}
-
-	//存储每个局面的value
-	class HashTable {
-	  constructor() {
-	    //低于2的32次方
-	    this.hashMask = 1024 * 1024 - 1
-	    this.hashTable = []
-	  }
-
-	  clearHashTable() {
-	    this.hashTable = []
-	  }
-
-	  _getIndex(zobristNode) {
-	    return zobristNode.key.and(this.hashMask)
-	  }
-
-	  //其中downwardDepth是当前局面到搜索到的最后一层的高度，ply是根节点到当前节点的高度,ply只对将军有用，不保存
-	  saveHashTable(newZobristNode, value, downwardDepth, flag, goodMove, ply = 0) {
-	    if (value < -winValue) {
-	      value = value - ply
-	    } else if (value > winValue) {
-	      value = value + ply
-	    }
-
-	    this.hashTable[this._getIndex(newZobristNode)] = new HashNode(newZobristNode, value, downwardDepth, flag, goodMove)
-	  }
-
-	  readHashTable(newZobristNode, currentDownwardDepth, currentAlpha, currentBeta, ply = 0) {
-	    const hashNode = this.hashTable[this._getIndex(newZobristNode)]
-
-	    //0. 没找到对应的键
-	    if (!hashNode) return
-
-	    const { zobristNode, value, downwardDepth, flag, mv } = hashNode
-
-	    //1. 校验值相同
-	    if (zobristNode && zobristNode.equal(newZobristNode)) {
-	      //2. 置换表高度不够深
-	      if (currentDownwardDepth > downwardDepth) {
-	        //如果是将军的值，那么就算不够深也是pv值
-	        if (flag === hashExact) {
-	          if (value < -winValue) {
-	            if (value >= -banValue) {
-	              return
-	            }
-	            return value + ply
-	          } else if (value > winValue) {
-	            if (value <= banValue) {
-	              return
-	            }
-	            return value - ply
-	          } else if (value === drawValue || value === -drawValue) {
-	            return
-	          }
-	        }
-	      } 
-	      //3 置换表里深度更深
-	      else {
-	        //2.1 是确定的值
-	        if (flag === hashExact) {
-	          return value
-	        }
-
-	        //2.2 保存的是一个alpha值
-	        else if (flag === hashAlpha) {
-	          //保存的alpha值若小于当前alpha值，就返回当前alpha值，因为pv值是小于保存的alpha值的，也小于当前alpha值
-	          if (currentAlpha >= value) {
-	            return currentAlpha
-	          }
-	        }
-
-	        //2.3 保存的是一个beta值
-	        else if (flag === hashBeta) {
-	          //保存的beta值若大于当前beta值，就返回当前beta值，因为pv值是大于保存的beta值的，也大于当前beta值
-	          if (currentBeta <= value) {
-	            return currentBeta
-	          }
-	        }
-
-	        //2.4 没找到值，返回一个好的启发式走法
-	        return mv
-	      }
-	    }
-	  }
-	}
-
-	const zobristTable = initZobristTable()
-	const zobristSide = initZobristSide()
-
-	module.exports = {
-	  Zobrist,
-	  rand16,
-	  ZobristNode,
-	  zobristTable,
-	  zobristSide,
-	  HashTable,
-	  hashAlpha,
-	  hashBeta,
-	  hashExact
-	}
-
-
-/***/ },
+/* 3 */,
+/* 4 */,
+/* 5 */,
+/* 6 */,
+/* 7 */,
 /* 8 */,
 /* 9 */
 /***/ function(module, exports, __webpack_require__) {
@@ -13654,6 +11013,2651 @@
 
 	module.exports = function() { throw new Error("define cannot be used indirect"); };
 
+
+/***/ },
+/* 12 */
+/***/ function(module, exports, __webpack_require__) {
+
+	const {
+	  InitialBoard,
+	  CharToInt,
+	  IntToChar,
+	  PieceNumToType,
+	  Move,
+	  KnightMove,
+	  KingMove,
+	  AdvisorMove,
+	  BishopMove,
+	  RookMove,
+	  CannonMove,
+	  PawnMove,
+	  canAttackByKing,
+	  canAttackByAdvisor,
+	  canAttackByBishop,
+	  canAttackByKnight,
+	  canAttackByRook,
+	  canAttackByCannon,
+	  canAttackByPawn,
+	} = __webpack_require__(13)
+
+	const {
+	  evalWhite,
+	  evalBlack,
+	  evalBlackMove,
+	  evalWhiteMove,
+	  banValue,
+	  drawValue,
+	  nullOkMargin,
+	  nullSafeMargin
+	} = __webpack_require__(14)
+
+	const {
+	  zobristTable,
+	  zobristSide,
+	  Zobrist,
+	  ZobristNode
+	} = __webpack_require__(15)
+
+	const initialFen = 'rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w'
+
+	class Pos {
+	  constructor(fen = initialFen, moveStack = []) {
+	    this.fenToBoard(fen)
+
+	    moveStack.forEach(({ from, to }) => {
+	      const legalMove = this.getLegalMove(from, to)
+	      if (legalMove) {
+	        this.makeMove(legalMove)
+	      } else {
+	        throw new Error('非法的移动')
+	      }
+	    })
+	  }
+
+	  static setToOriginal() {
+	    const pos = new Pos(initialFen)
+	    return pos
+	  }
+
+	  getLegalMove(from, to) {
+	    return this.generateMoves().find((move) => move.from === from && move.to === to)
+	  }
+
+	  clearBoard() {
+	    //没有棋子则为0
+	    this.board = Array.from(Array(256)).map(() => 0)
+	    //棋子被吃掉的为0
+	    this.piece = Array.from(Array(48)).map(() => 0)
+	  }
+
+	  canAttack(piecePos, sideTag) {
+	    //被将攻击
+	    if (canAttackByKing(this, this.piece[sideTag], piecePos)) {
+	      return true
+	    }
+
+	    //被士攻击
+	    for (let i = 1; i <= 2; i++) {
+	      const knightPos = this.piece[sideTag + i]
+	      if (canAttackByKing(this, knightPos, piecePos)) {
+	        return true
+	      }
+	    }
+
+	    //被象攻击
+	    for (let i = 3; i <= 4; i++) {
+	      const BishopPos = this.piece[i + this.sideTag]
+
+	      //马还没被吃掉
+	      if (BishopPos) {
+	        if (canAttackByBishop(this, BishopPos, piecePos)) {
+	          return true
+	        }
+	      }
+	    }
+
+	    //是否被马攻击
+	    for (let i = 5; i <= 6; i++) {
+	      const knightPos = this.piece[i + this.sideTag]
+
+	      //马还没被吃掉
+	      if (knightPos) {
+	        if (canAttackByKnight(this, knightPos, piecePos)) {
+	          return true
+	        }
+	      }
+	    }
+
+	    //是否被车攻击
+	    for (let i = 7; i <= 8; i++) {
+	      const rookPos = this.piece[i + this.sideTag]
+
+	      //车还没被吃掉
+	      if (rookPos) {
+	        if (canAttackByRook(this, rookPos, piecePos)) {
+	          return true
+	        }
+	      }
+	    }
+
+	    //是否被炮攻击
+	    for (let i = 9; i <= 10; i++) {
+	      const cannonPos = this.piece[i + this.sideTag]
+
+	      //炮还没被吃掉
+	      if (cannonPos) {
+	        if (canAttackByCannon(this, cannonPos, piecePos)) {
+	          return true
+	        }
+	      }
+	    }
+
+	    //是否被兵攻击
+	    for (let i = 11; i <= 15; i++) {
+	      const pawnPos = this.piece[i + this.sideTag]
+
+	      //兵还没被吃掉
+	      if (pawnPos) {
+	        if (canAttackByPawn(this, pawnPos, piecePos)) {
+	          return true
+	        }
+	      }
+	    }
+
+	    return false
+	  }
+
+	  isProtect(piecePos) {
+	    //16为红方,32为黑方
+	    const sideTag = this.board[piecePos] & 16 ? 16 : 32
+
+	    return this.canAttack(piecePos, sideTag)
+	  }
+
+	  repValue() {
+	    const status = this.repStatus()
+	    switch (status) {
+	      //双方重复但未将军
+	      case 1:
+	        return drawValue
+	      //我方长将，对我方来说返回一个-ban值
+	      case 3:
+	        return -banValue
+	      //敌方长将，对我方来说返回一个ban值  
+	      case 5:
+	        return banValue
+	      //双方长将
+	      case 7:
+	        return drawValue
+	    }
+	  }
+
+	  repStatus() {
+	    let checkIndex = this.checkStack.length - 2
+	    let zobristIndex = this.zobristStack.length - 2
+	    let moveIndex = this.moveStack.length - 1
+
+	    let selfSide = false
+	    let oppPerpCheck = this.checkStack[this.checkStack.length - 1]
+	    let perpCheck = true
+	    while (zobristIndex >= 0) {
+	      if (this.moveStack[moveIndex].capture) {
+	        return 0
+	      }
+
+	      if (selfSide) {
+	        oppPerpCheck = oppPerpCheck && this.checkStack[checkIndex]
+	        if (this.zobrist.equal(this.zobristStack[zobristIndex])) {
+	          return 1 + (oppPerpCheck ? 4 : 0) + (perpCheck ? 2 : 0)
+	        }
+	      } else {
+	        perpCheck = perpCheck && this.checkStack[checkIndex]
+	      }
+	      selfSide = !selfSide
+	      zobristIndex--
+	      checkIndex--
+	      moveIndex--
+	    }
+
+	    return 0
+	  }
+
+	  //当前回合棋子能否将到对面棋子
+	  canCheck() {
+	    const wKingPos = this.piece[16]
+	    const bKingPos = this.piece[32]
+
+	    const opponentKingPos = this.side ? wKingPos : bKingPos
+	    const sideTag = this.side ? 32 : 16
+
+	    //判断将帅是否照面
+	    if (wKingPos % 16 === bKingPos % 16) {
+	      let isFace = true
+	      for (let middlePiecePos = wKingPos - 16; middlePiecePos !== bKingPos; middlePiecePos -= 16) {
+	        if (this.board[middlePiecePos]) isFace = false
+	      }
+
+	      if (isFace) return true
+	    }
+
+	    return this.canAttack(opponentKingPos, sideTag)
+	  }
+
+	  addPiece(pos, pc) {
+	    this.board[pos] = pc
+	    this.piece[pc] = pos
+	  }
+
+	  //当前颜色的将是否正在被将军
+	  isChecked() {
+	    this.changeSide()
+	    const isChecked = this.canCheck()
+	    this.changeSide()
+	    return isChecked
+	  }
+
+	  changeSide() {
+	    this.side = this.side === 0 ? 1 : 0
+	    this.sideTag = 16 + this.side * 16
+	  }
+
+	  generateMoves(capture = false) {
+	    let moves = []
+
+	    for (let i = 0; i <= 15; i++) {
+	      const pieceIndex = i + this.sideTag
+	      if (!this.piece[pieceIndex]) {
+	        continue
+	      }
+
+	      switch (i) {
+	        case 0:
+	          KingMove(this, moves, this.piece[pieceIndex], capture)
+	          break
+	        case 1:
+	        case 2:
+	          AdvisorMove(this, moves, this.piece[pieceIndex], capture)
+	          break
+	        case 3:
+	        case 4:
+	          BishopMove(this, moves, this.piece[pieceIndex], capture)
+	          break
+	        case 5:
+	        case 6:
+	          KnightMove(this, moves, this.piece[pieceIndex], capture)
+	          break
+	        case 7:
+	        case 8:
+	          RookMove(this, moves, this.piece[pieceIndex], capture)
+	          break
+	        case 9:
+	        case 10:
+	          CannonMove(this, moves, this.piece[pieceIndex], capture)
+	          break
+	        case 11:
+	        case 12:
+	        case 13:
+	        case 14:
+	        case 15:
+	          PawnMove(this, moves, this.piece[pieceIndex], capture)
+	          break
+	      }
+	    }
+	    return moves
+	  }
+
+	  get zobrist() {
+	    return this.zobristStack[this.zobristStack.length - 1]
+	  }
+
+	  movePiece(move) {
+	    //存储移动的棋子
+	    this.moveStack.push(move)
+
+	    //移动棋子
+	    const movedPiece = this.board[move.from]
+	    this.board[move.from] = 0
+	    this.board[move.to] = movedPiece
+	    this.piece[movedPiece] = move.to
+
+	    let newZobrist = this.zobrist
+	    //吃棋子
+	    if (move.capture) {
+	      const capturedPos = this.piece[move.capture]
+	      this.piece[move.capture] = 0
+	    }
+	  }
+
+	  unMovePiece() {
+	    //撤销上一步
+	    const move = this.moveStack.pop()
+
+	    //移动的棋子
+	    const movedPiece = this.board[move.to]
+
+	    //撤销移动棋子
+	    this.board[move.to] = 0
+	    this.board[move.from] = movedPiece
+	    this.piece[movedPiece] = move.from
+
+	    //撤销吃棋子
+	    if (move.capture) {
+	      this.board[move.to] = move.capture
+	      this.piece[move.capture] = move.to
+	    }
+	  }
+
+	  makeMove(move) {
+	    //1. 尝试着走一步 
+	    this.movePiece(move)
+
+	    //2. 走了这一步后会被将军
+	    if (this.isChecked()) {
+	      //撤销这一步
+	      this.unMovePiece()
+	      return false
+	    }
+	    //3. 一步能走的棋
+	    else {
+	      //3.0 改变局面颜色
+	      this.changeSide()
+
+	      const movedPiece = this.board[move.to]
+
+	      //获得上一个移动棋子的颜色
+	      const opponentSide = this.side?0:1
+
+	      //3.1 改变zobrist值
+	      const pieceZobrist = zobristTable[opponentSide][PieceNumToType[movedPiece]][move.from]
+	      const nextPieceZobrist = zobristTable[opponentSide][PieceNumToType[movedPiece]][move.to]
+	      let newZobrist = this.zobrist.xor(pieceZobrist).xor(nextPieceZobrist).xor(zobristSide)
+
+	      //3.1.1 如果被吃子
+	      if (move.capture) {
+	        //zobrist里取消被吃掉的子
+	        newZobrist = newZobrist.xor(zobristTable[this.side][PieceNumToType[move.capture]][move.to])
+	      }
+
+	      //3.1.2
+	      this.zobristStack.push(newZobrist)
+
+	      //3.2 判断当前局面是否被将军
+	      this.checkStack.push(this.isChecked())
+
+	      return true
+	    }
+	  }
+
+	  unMakeMove() {
+	    //1. 取消上一步
+	    this.unMovePiece()
+
+	    //2. 弹出上一个zobrist值
+	    this.zobristStack.pop()
+
+	    //3. 撤销将军判断
+	    this.checkStack.pop()
+
+	    //4. 改变局面颜色
+	    this.changeSide()
+	  }
+
+	  toFen() {
+	    let fen = ''
+	    let blank = 0
+	    for (let i = 3; i <= 12; i++) {
+	      for (let j = 3; j <= 11; j++) {
+	        const pc = this.board[(i << 4) + j]
+
+	        if (pc !== 0) {
+	          if (blank !== 0) {
+	            fen += blank
+	            blank = 0
+	          }
+	          fen += IntToChar(pc)
+	        } else {
+	          blank++
+	        }
+	      }
+	      if (blank !== 0) {
+	        fen += blank
+	        blank = 0
+	      }
+
+	      if (i !== 12) {
+	        fen += "/"
+	      }
+	    }
+
+	    fen += ` ${this.side === 0 ? 'w' : 'b'}`
+	    return fen
+	  }
+
+	  evaluate(side = null) {
+	    if (side === 0) {
+	      return this.whiteScore
+	    } else if (side === 1) {
+	      return this.blackScore
+	    }
+
+	    if (this.side === 0) {
+	      return this.whiteScore - this.blackScore
+	    } else {
+	      return this.blackScore - this.whiteScore
+	    }
+	  }
+
+	  get nullOk() {
+	    return this.evaluate(this.side) >= nullOkMargin
+	  }
+
+	  get nullSafe() {
+	    return this.evaluate(this.side) >= nullSafeMargin
+	  }
+
+	  get whiteScore() {
+	    const whiteMoveScore = 0
+	    const score = evalWhite(this) - whiteMoveScore
+	    return score
+	  }
+
+	  get blackScore() {
+	    const blackMoveScore = 0
+	    const score = evalBlack(this) - blackMoveScore
+	    return score
+	  }
+
+	  initialState(){
+	    this.moveStack = []
+	    this.zobristStack = []
+	    this.checkStack = []
+	  }
+
+	  fenToBoard(fen) {
+	    const pc = {}
+
+	    const fenInfo = fen.split(' ')
+
+	    this.clearBoard()
+	    this.initialState()
+
+	    let row = 3, column = 3
+	    Array.from(fenInfo[0]).forEach((fenChar) => {
+	      if (fenChar === '/') {
+	        row++
+	        column = 3
+	      } else if (!isNaN(Number(fenChar))) {
+	        column += parseInt(fenChar)
+	      } else {
+	        let piece = CharToInt(fenChar)
+	        if (pc[piece] === undefined) {
+	          pc[piece] = 0
+	        }
+
+	        this.addPiece((row << 4) + column, pc[piece] + piece)
+
+	        column++
+	        pc[piece]++
+	      }
+	    })
+
+	    //初始化棋盘颜色
+	    this.side = fenInfo[1] === 'b' ? 1 : 0
+	    this.sideTag = 16 + this.side * 16
+
+	    //初始化局面的zobrist
+	    this.zobristStack = [this.board.reduce((zobrist, piece, index) => {
+	      if (piece) {
+	        return zobrist.xor(zobristTable[this.side][PieceNumToType[piece]][index])
+	      } else {
+	        return zobrist
+	      }
+	    }, new ZobristNode())]
+	    this.checkStack = [this.isChecked()]
+	  }
+	}
+
+	module.exports = Pos
+
+
+
+/***/ },
+/* 13 */
+/***/ function(module, exports) {
+
+	//board
+
+	exports.InitialBoard = [
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 39, 37, 35, 33, 32, 34, 36, 38, 40, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 41, 0, 0, 0, 0, 0, 42, 0, 0, 0, 0, 0,
+	  0, 0, 0, 43, 0, 44, 0, 45, 0, 46, 0, 47, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 27, 0, 28, 0, 29, 0, 30, 0, 31, 0, 0, 0, 0,
+	  0, 0, 0, 0, 25, 0, 0, 0, 0, 0, 26, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 23, 21, 19, 17, 16, 18, 20, 22, 24, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+	]
+
+	const newLegalPosition = [
+	  //white
+	  [
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 0, 0, 0, 0,
+	    0, 0, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 0, 0, 0, 0,
+	    0, 0, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 0, 0, 0, 0,
+	    0, 0, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 0, 0, 0, 0,
+	    0, 0, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 0, 0, 0, 0,
+	    0, 0, 0, 9, 1, 25, 1, 9, 1, 25, 1, 9, 0, 0, 0, 0,
+	    0, 0, 0, 9, 1, 9, 1, 9, 1, 9, 1, 9, 0, 0, 0, 0,
+	    0, 0, 0, 17, 1, 1, 7, 19, 7, 1, 1, 17, 0, 0, 0, 0,
+	    0, 0, 0, 1, 1, 1, 3, 7, 3, 1, 1, 1, 0, 0, 0, 0,
+	    0, 0, 0, 1, 1, 17, 7, 3, 7, 17, 1, 1, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  ],
+
+	  //black
+	  [
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 1, 1, 17, 7, 3, 7, 17, 1, 1, 0, 0, 0, 0,
+	    0, 0, 0, 1, 1, 1, 3, 7, 3, 1, 1, 1, 0, 0, 0, 0,
+	    0, 0, 0, 17, 1, 1, 7, 19, 7, 1, 1, 17, 0, 0, 0, 0,
+	    0, 0, 0, 9, 1, 9, 1, 9, 1, 9, 1, 9, 0, 0, 0, 0,
+	    0, 0, 0, 9, 1, 25, 1, 9, 1, 25, 1, 9, 0, 0, 0, 0,
+	    0, 0, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 0, 0, 0, 0,
+	    0, 0, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 0, 0, 0, 0,
+	    0, 0, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 0, 0, 0, 0,
+	    0, 0, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 0, 0, 0, 0,
+	    0, 0, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  ]
+	]
+
+	//每一个棋子的mask，通过与legalPosition与运算产生棋子的位置表
+	const PositionMask = [2, 4, 16, 1, 1, 1, 8]
+
+	LegalPosition = [
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
+	  0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
+	  0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
+	  0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
+	  0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
+	  0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
+	  0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
+	  0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
+	  0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
+	  0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	]
+
+	console.assert(exports.InitialBoard.length === 256)
+	console.assert(LegalPosition.length === 256)
+
+	//棋子编号到棋子类型编号,分别为帅，士，象，马，车，炮，兵（0，1，2，3，4，5，6，7）
+	exports.PieceNumToType = [
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 6, 6, 6,
+	  0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 6, 6, 6,
+	]
+
+	//棋子编号到棋子名字
+	exports.IntToChar = function (value) {
+	  if (value < 32) {
+	    switch (value) {
+	      case 16: return 'K'
+
+	      case 17:
+	      case 18: return 'A'
+
+	      case 19:
+	      case 20: return 'B'
+
+	      case 21:
+	      case 22: return 'N'
+
+	      case 23:
+	      case 24: return 'R'
+
+	      case 25:
+	      case 26: return 'C'
+
+	      case 27:
+	      case 28:
+	      case 29:
+	      case 30:
+	      case 31: return 'P'
+	    }
+	  } else {
+	    switch (value - 16) {
+	      case 16: return 'k'
+
+	      case 17:
+	      case 18: return 'a'
+
+	      case 19:
+	      case 20: return 'b'
+
+	      case 21:
+	      case 22: return 'n'
+
+	      case 23:
+	      case 24: return 'r'
+
+	      case 25:
+	      case 26: return 'c'
+
+	      case 27:
+	      case 28:
+	      case 29:
+	      case 30:
+	      case 31: return 'p'
+	    }
+	  }
+	}
+
+	//棋子编号到棋子名字
+	exports.CharToInt = function (value) {
+	  switch (value) {
+	    case 'K':
+	      return 16
+	    case 'A':
+	      return 17
+	    case 'B':
+	      return 19
+	    case 'N':
+	      return 21
+	    case 'R':
+	      return 23
+	    case 'C':
+	      return 25
+	    case 'P':
+	      return 27
+
+	    case 'k':
+	      return 32
+	    case 'a':
+	      return 33
+	    case 'b':
+	      return 35
+	    case 'n':
+	      return 37
+	    case 'r':
+	      return 39
+	    case 'c':
+	      return 41
+	    case 'p':
+	      return 43
+	  }
+	}
+
+	exports.getRowAndColumn = function (pos) {
+	  return { row: (pos >> 4) - 2, column: pos % 16 - 3 + 1 }
+	}
+
+	//move
+	exports.Move = class {
+
+	  //wvl 是MVV-LVA得分值,capture是被攻击棋子的编号
+	  constructor(from, to, capture, wvl) {
+	    this.from = from
+	    this.to = to
+	    this.capture = capture
+	    this.wvl = wvl
+	  }
+
+	  equal(move) {
+	    return this.from === move.from && this.to === move.to && this.capture === move.capture
+	  }
+
+	  toString() {
+	    return JSON.stringify({ from: this.from, to: this.to, capture: this.capture, wvl: this.wvl })
+	  }
+	}
+
+	function SaveMove(moves, pos, from, to, capture = false) {
+	  if (pos.board[to]) {
+	    const attackingPiece = pos.board[from]
+	    const attackedPiece = pos.board[to]
+	    moves.push(new exports.Move(from, to, pos.board[to], pos.isProtect(to) ? MvvValues[attackedPiece] - MvvValues[attackingPiece] : MvvValues[attackedPiece]))
+	  } else {
+	    if (capture) {
+	      return
+	    }
+	    moves.push(new exports.Move(from, to))
+	  }
+	}
+
+	const MvvValues = [
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  8, 2, 2, 2, 2, 4, 4, 6, 6, 4, 4, 2, 2, 2, 2, 2,
+	  8, 2, 2, 2, 2, 4, 4, 6, 6, 4, 4, 2, 2, 2, 2, 2
+	]
+
+	//king
+	const KingDir = [-0x10, 0x01, 0x10, -0x01]
+	const KingPosition = [
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	]
+
+	function getPieceSide(pos, piecePos) {
+	  const side = pos.board[piecePos] & 16 ? 0 : 1
+	  const sideTag = (side + 1) * 16
+	  return { side, sideTag }
+	}
+
+	exports.KingMove = function (pos, moves, piecePos, capture = false) {
+	  const movesStartNum = moves.length
+
+	  KingDir.forEach((dir, index) => {
+	    const nextPiecePos = piecePos + dir
+
+	    //在九宫上
+	    // if (KingPosition[nextPiecePos]) {
+	    if (newLegalPosition[pos.side][nextPiecePos] & PositionMask[0]) {
+	      //没有本方棋子
+	      if (!(pos.board[nextPiecePos] & pos.sideTag)) {
+	        //capture=true时只生成吃子走法
+	        SaveMove(moves, pos, piecePos, nextPiecePos, capture)
+	      }
+	    }
+	  })
+
+	  //生成了多少步
+	  return moves.length - movesStartNum
+	}
+
+	exports.canAttackByKing = function (pos, piecePos, nextPiecePos) {
+	  //不在九宫上
+	  if (!(newLegalPosition[getPieceSide(pos, piecePos).side][nextPiecePos] & PositionMask[0])) {
+	    return false
+	  }
+
+	  return KingDir.some((dir, index) => piecePos + dir === nextPiecePos)
+	}
+
+
+	//advisor
+	const AdvisorDir = [-0x11, -0x0f, 0x11, 0x0f]
+	const AdvisorPosition = [
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	]
+
+	exports.AdvisorMove = function (pos, moves, piecePos, capture = false) {
+	  const movesStartNum = moves.length
+
+	  AdvisorDir.forEach((dir, index) => {
+	    const nextPiecePos = piecePos + dir
+
+	    //在九宫上
+	    // if (AdvisorPosition[nextPiecePos]) {
+	    if (newLegalPosition[pos.side][nextPiecePos] & PositionMask[1]) {
+	      //没有本方棋子
+	      if (!(pos.board[nextPiecePos] & pos.sideTag)) {
+	        //capture=true时只生成吃子走法
+	        SaveMove(moves, pos, piecePos, nextPiecePos, capture)
+	      }
+	    }
+	  })
+
+	  //生成了多少步
+	  return moves.length - movesStartNum
+	}
+
+	exports.canAttackByAdvisor = function (pos, piecePos, nextPiecePos) {
+	  //不在九宫上
+	  if (!(newLegalPosition[getPieceSide(pos, piecePos).side][nextPiecePos] & PositionMask[1])) {
+	    return false
+	  }
+
+	  return AdvisorDir.some((dir, index) => piecePos + dir === nextPiecePos)
+	}
+
+	//bishop
+	const BishopDir = [-0x22, -0x1e, 0x22, 0x1e]
+	const BishopCheck = [-0x11, -0x0f, 0x11, 0x0f]
+	const BishopPosition = [
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	]
+
+	exports.BishopMove = function (pos, moves, piecePos, capture = false) {
+	  const movesStartNum = moves.length
+
+	  BishopDir.forEach((dir, index) => {
+	    const nextPiecePos = piecePos + dir
+
+	    //在棋盘上
+	    // if (BishopPosition[nextPiecePos] && ) {
+	    if (newLegalPosition[pos.side][nextPiecePos] & PositionMask[2]) {
+
+	      //不卡象眼
+	      if (pos.board[piecePos + BishopCheck[index]] === 0) {
+	        //没有本方棋子
+	        if (!(pos.board[nextPiecePos] & pos.sideTag)) {
+	          //capture=true时只生成吃子走法
+	          SaveMove(moves, pos, piecePos, nextPiecePos, capture)
+	        }
+	      }
+	    }
+	  })
+
+	  //生成了多少步
+	  return moves.length - movesStartNum
+	}
+
+	exports.canAttackByBishop = function (pos, piecePos, nextPiecePos) {
+	  //不在本方河内
+	  if (!(newLegalPosition[getPieceSide(pos, piecePos).side][nextPiecePos] & PositionMask[2])) {
+	    return false
+	  }
+
+	  return BishopDir.some((dir, index) => piecePos + dir === nextPiecePos && pos.board[piecePos + BishopCheck[index]])
+	}
+
+	//knight
+	const KnightDir = [0x0e, -0x12, -0x21, -0x1f, -0x0e, 0x12, 0x21, 0x1f]
+	const KnightCheck = [-0x01, -0x01, -0x10, -0x10, 0x01, 0x01, 0x10, 0x10]
+	const KnightPosition = LegalPosition
+
+	exports.KnightMove = function (pos, moves, piecePos, capture = false) {
+	  const movesStartNum = moves.length
+
+	  KnightDir.forEach((dir, index) => {
+	    const nextPiecePos = piecePos + dir
+
+	    //在棋盘上
+	    // if (KnightPosition[nextPiecePos]  ) {
+	    if (newLegalPosition[pos.side][nextPiecePos] & PositionMask[3]) {
+	      //不蹩马脚
+	      if (pos.board[piecePos + KnightCheck[index]] === 0) {
+	        //没有本方棋子
+	        if (!(pos.board[nextPiecePos] & pos.sideTag)) {
+	          //capture=true时只生成吃子走法
+	          SaveMove(moves, pos, piecePos, nextPiecePos, capture)
+	        }
+	      }
+	    }
+	  })
+
+	  //生成了多少步
+	  return moves.length - movesStartNum
+	}
+
+	exports.canAttackByKnight = function (pos, piecePos, nextPiecePos) {
+	  return KnightDir.some((dir, index) => {
+	    //在棋盘上
+	    if (newLegalPosition[getPieceSide(pos, piecePos).side][nextPiecePos] & PositionMask[3]) {
+	      //在马的进攻方向上
+	      if (dir + piecePos === nextPiecePos) {
+	        //不蹩马脚
+	        if (pos.board[piecePos + KnightCheck[index]] === 0) {
+	          return true
+	        }
+	      }
+	    }
+	  })
+	}
+
+	//rook
+	const RookDir = [-0x01, -0x10, 0x01, 0x10]
+	const RookPosition = LegalPosition
+
+	exports.RookMove = function (pos, moves, piecePos, capture = false) {
+	  const movesStartNum = moves.length
+
+	  RookDir.forEach((dir, index) => {
+	    let nextPiecePos = piecePos + dir
+
+	    while ((newLegalPosition[pos.side][nextPiecePos] & PositionMask[4]) && pos.board[nextPiecePos] === 0) {
+	      SaveMove(moves, pos, piecePos, nextPiecePos, capture)
+	      nextPiecePos += dir
+	    }
+
+	    //在棋盘上
+	    if (newLegalPosition[pos.side][nextPiecePos] & PositionMask[4]) {
+	      //没有本方棋子
+	      if (!(pos.board[nextPiecePos] & pos.sideTag)) {
+	        //capture=true时只生成吃子走法
+	        SaveMove(moves, pos, piecePos, nextPiecePos, capture)
+	      }
+	    }
+	  })
+
+	  //生成了多少步
+	  return moves.length - movesStartNum
+	}
+
+	exports.canAttackByRook = function (pos, piecePos, nextPiecePos) {
+	  //不在棋盘上
+	  if (!(newLegalPosition[getPieceSide(pos, piecePos).side][nextPiecePos] & PositionMask[4])) {
+	    return false
+	  }
+
+	  let dir
+	  //同一行
+	  if ((nextPiecePos >> 4) === (piecePos >> 4)) {
+	    dir = nextPiecePos > piecePos ? RookDir[2] : RookDir[0]
+	  }
+	  //同一列
+	  else if (nextPiecePos % 16 === piecePos % 16) {
+	    dir = nextPiecePos > piecePos ? RookDir[3] : RookDir[1]
+	  }
+	  else {
+	    return false
+	  }
+
+	  //判断中间是否有棋子
+	  for (let middlePiecePos = piecePos + dir; middlePiecePos !== nextPiecePos; middlePiecePos += dir) {
+	    if (pos.board[middlePiecePos] !== 0) return false
+	  }
+
+	  return true
+	}
+
+	//can
+	const CannonDir = [-0x01, -0x10, 0x01, 0x10]
+	const CannonPosition = LegalPosition
+
+	exports.CannonMove = function (pos, moves, piecePos, capture = false) {
+	  const movesStartNum = moves.length
+
+	  CannonDir.forEach((dir, index) => {
+	    let nextPiecePos = piecePos + dir
+
+	    //查找能到的
+	    while ((newLegalPosition[pos.side][nextPiecePos] & PositionMask[5]) && pos.board[nextPiecePos] === 0) {
+	      //capture=true时只生成吃子走法
+	      SaveMove(moves, pos, piecePos, nextPiecePos, capture)
+
+	      nextPiecePos += dir
+	    }
+
+	    //不在棋盘上
+	    if (!(newLegalPosition[pos.side][nextPiecePos] & PositionMask[5])) {
+	      return
+	    }
+
+	    //查找能吃的
+	    nextPiecePos += dir
+	    while ((newLegalPosition[pos.side][nextPiecePos] & PositionMask[5]) && pos.board[nextPiecePos] === 0) {
+	      nextPiecePos += dir
+	    }
+
+	    //在棋盘上
+	    if (newLegalPosition[pos.side][nextPiecePos] & PositionMask[5]) {
+	      //没有本方棋子
+	      if (!(pos.board[nextPiecePos] & pos.sideTag)) {
+	        //capture=true时只生成吃子走法
+	        SaveMove(moves, pos, piecePos, nextPiecePos, capture)
+	      }
+	    }
+	  })
+
+	  //生成了多少步
+	  return moves.length - movesStartNum
+	}
+
+	exports.canAttackByCannon = function (pos, piecePos, nextPiecePos) {
+	  //不在棋盘上
+	  if (!(newLegalPosition[getPieceSide(pos, piecePos).side][nextPiecePos] & PositionMask[4])) {
+	    return false
+	  }
+
+	  let dir
+	  //同一行
+	  if ((nextPiecePos >> 4) === (piecePos >> 4)) {
+	    dir = nextPiecePos > piecePos ? CannonDir[2] : CannonDir[0]
+	  }
+	  //同一列
+	  else if (nextPiecePos % 16 === piecePos % 16) {
+	    dir = nextPiecePos > piecePos ? CannonDir[3] : CannonDir[1]
+	  }
+	  else {
+	    return false
+	  }
+
+	  let middlePieceNum = 0
+
+	  //判断中间的棋子少于等于1个
+	  for (let middlePiecePos = piecePos + dir; middlePiecePos !== nextPiecePos; middlePiecePos += dir) {
+	    if (pos.board[middlePiecePos] !== 0) {
+	      middlePieceNum++
+	      if (middlePieceNum === 2) return false
+	    }
+	  }
+
+	  if (middlePieceNum === 0) {
+	    return false
+	  }
+	  return true
+	}
+
+
+	//pawn
+	const PawnDir = [
+	  [-0x10, -0x01, 0x01],
+	  [0x10, -0x01, 0x01]
+	]
+	const PawnPostion = [
+	  //white pawn
+	  [
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
+	    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
+	    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
+	    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
+	    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
+	    0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0,
+	    0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  ],
+
+	  //black pawn
+	  [
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0,
+	    0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0,
+	    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
+	    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
+	    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
+	    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
+	    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  ]
+	]
+
+	exports.PawnMove = function (pos, moves, piecePos, capture = false) {
+	  const movesStartNum = moves.length
+	  let thisPawnDir = PawnDir[pos.side]
+	  // let thisPawnPosition = newLegalPosition[pos.side][nextPiecePos] & PositionMask[5]
+
+	  thisPawnDir.forEach((dir, index) => {
+	    const nextPiecePos = piecePos + dir
+
+	    //在兵行动位置棋盘上
+	    if (newLegalPosition[pos.side][nextPiecePos] & PositionMask[6]) {
+	      //没有本方棋子
+	      if (!(pos.board[nextPiecePos] & pos.sideTag)) {
+	        //是否只生成吃子走法
+	        if (capture && pos.board[nextPiecePos]) {
+	          SaveMove(moves, pos, piecePos, nextPiecePos, capture)
+	          return
+	        }
+	        SaveMove(moves, pos, piecePos, nextPiecePos, capture)
+	      }
+	    }
+	  })
+
+	  //生成了多少步
+	  return moves.length - movesStartNum
+	}
+
+	exports.canAttackByPawn = function (pos, piecePos, nextPiecePos) {
+	  const side = getPieceSide(pos, piecePos).side
+	  return PawnDir[side].some((dir, index) => {
+	    //在兵行动位置棋盘上
+	    if (newLegalPosition[side][nextPiecePos] & PositionMask[6]) {
+	      //在兵进攻的方向上
+	      if (piecePos + dir === nextPiecePos) {
+	        return true
+	      }
+	    }
+	  })
+	}
+
+/***/ },
+/* 14 */
+/***/ function(module, exports, __webpack_require__) {
+
+	
+	const {
+	  PieceNumToType,
+	  KnightMove,
+	  KingMove,
+	  AdvisorMove,
+	  BishopMove,
+	  RookMove,
+	  CannonMove,
+	  PawnMove,
+	} = __webpack_require__(13)
+
+	// const WhitePositionValues = [
+	//   [	// 帅
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 10, 10, 10, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 15, 20, 15, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+	//   ], [	// 仕
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 30, 0, 30, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 22, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 30, 0, 30, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+	//   ], [	// 相
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 25, 0, 0, 0, 25, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 20, 0, 0, 0, 35, 0, 0, 0, 20, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 30, 0, 0, 0, 30, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+	//   ], [	// 马
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 70, 80, 90, 80, 70, 80, 90, 80, 70, 0, 0, 0, 0,
+	//     0, 0, 0, 80, 110, 125, 90, 70, 90, 125, 110, 80, 0, 0, 0, 0,
+	//     0, 0, 0, 90, 100, 120, 125, 120, 125, 120, 100, 90, 0, 0, 0, 0,
+	//     0, 0, 0, 90, 100, 120, 130, 110, 130, 120, 100, 90, 0, 0, 0, 0,
+	//     0, 0, 0, 90, 110, 110, 120, 100, 120, 110, 110, 90, 0, 0, 0, 0,
+	//     0, 0, 0, 90, 100, 100, 110, 100, 110, 100, 100, 90, 0, 0, 0, 0,
+	//     0, 0, 0, 80, 90, 100, 100, 90, 100, 100, 90, 80, 0, 0, 0, 0,
+	//     0, 0, 0, 80, 80, 90, 90, 80, 90, 90, 80, 80, 0, 0, 0, 0,
+	//     0, 0, 0, 70, 75, 75, 70, 50, 70, 75, 75, 70, 0, 0, 0, 0,
+	//     0, 0, 0, 60, 70, 75, 70, 60, 70, 75, 70, 60, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+	//   ], [	// 车
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 160, 170, 160, 150, 150, 150, 160, 170, 160, 0, 0, 0, 0,
+	//     0, 0, 0, 170, 180, 170, 190, 250, 190, 170, 180, 170, 0, 0, 0, 0,
+	//     0, 0, 0, 170, 190, 200, 220, 240, 220, 200, 190, 170, 0, 0, 0, 0,
+	//     0, 0, 0, 180, 220, 210, 240, 250, 240, 210, 220, 180, 0, 0, 0, 0,
+	//     0, 0, 0, 180, 220, 210, 240, 250, 240, 210, 220, 180, 0, 0, 0, 0,
+	//     0, 0, 0, 180, 220, 210, 240, 250, 240, 210, 220, 180, 0, 0, 0, 0,
+	//     0, 0, 0, 170, 190, 180, 220, 240, 220, 200, 190, 170, 0, 0, 0, 0,
+	//     0, 0, 0, 170, 180, 170, 170, 160, 170, 170, 180, 170, 0, 0, 0, 0,
+	//     0, 0, 0, 160, 170, 160, 160, 150, 160, 160, 170, 160, 0, 0, 0, 0,
+	//     0, 0, 0, 150, 160, 150, 160, 150, 160, 150, 160, 150, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+	//   ], [	// 炮
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 125, 130, 100, 70, 60, 70, 100, 130, 125, 0, 0, 0, 0,
+	//     0, 0, 0, 110, 125, 100, 70, 60, 70, 100, 125, 110, 0, 0, 0, 0,
+	//     0, 0, 0, 100, 120, 90, 80, 80, 80, 90, 120, 100, 0, 0, 0, 0,
+	//     0, 0, 0, 90, 110, 90, 110, 130, 110, 90, 110, 90, 0, 0, 0, 0,
+	//     0, 0, 0, 90, 110, 90, 110, 130, 110, 90, 110, 90, 0, 0, 0, 0,
+	//     0, 0, 0, 90, 100, 90, 110, 130, 110, 90, 100, 90, 0, 0, 0, 0,
+	//     0, 0, 0, 90, 100, 90, 90, 110, 90, 90, 100, 90, 0, 0, 0, 0,
+	//     0, 0, 0, 90, 100, 80, 80, 70, 80, 80, 100, 90, 0, 0, 0, 0,
+	//     0, 0, 0, 80, 90, 80, 70, 65, 70, 80, 90, 80, 0, 0, 0, 0,
+	//     0, 0, 0, 80, 90, 80, 70, 60, 70, 80, 90, 80, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+	//   ], [	// 兵
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 10, 10, 10, 20, 25, 20, 10, 10, 10, 0, 0, 0, 0,
+	//     0, 0, 0, 25, 30, 40, 50, 60, 50, 40, 30, 25, 0, 0, 0, 0,
+	//     0, 0, 0, 25, 30, 30, 40, 40, 40, 30, 30, 25, 0, 0, 0, 0,
+	//     0, 0, 0, 20, 25, 25, 30, 30, 30, 25, 25, 20, 0, 0, 0, 0,
+	//     0, 0, 0, 15, 20, 20, 20, 20, 20, 20, 20, 15, 0, 0, 0, 0,
+	//     0, 0, 0, 10, 0, 15, 0, 15, 0, 15, 0, 10, 0, 0, 0, 0,
+	//     0, 0, 0, 10, 0, 10, 0, 15, 0, 10, 0, 10, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+	//   ]
+	// ]
+
+	// const BlackPositionValues = [
+	//   [	// 帅
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 15, 20, 15, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 10, 10, 10, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+	//   ], [	// 仕
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 30, 0, 30, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 22, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 30, 0, 30, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+	//   ], [	// 相
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 30, 0, 0, 0, 30, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 20, 0, 0, 0, 35, 0, 0, 0, 20, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 25, 0, 0, 0, 25, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+	//   ], [	// 马
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 60, 70, 75, 70, 60, 70, 75, 70, 60, 0, 0, 0, 0,
+	//     0, 0, 0, 70, 75, 75, 70, 50, 70, 75, 75, 70, 0, 0, 0, 0,
+	//     0, 0, 0, 80, 80, 90, 90, 80, 90, 90, 80, 80, 0, 0, 0, 0,
+	//     0, 0, 0, 80, 90, 100, 100, 90, 100, 100, 90, 80, 0, 0, 0, 0,
+	//     0, 0, 0, 90, 100, 100, 110, 100, 110, 100, 100, 90, 0, 0, 0, 0,
+	//     0, 0, 0, 90, 110, 110, 120, 100, 120, 110, 110, 90, 0, 0, 0, 0,
+	//     0, 0, 0, 90, 100, 120, 130, 110, 130, 120, 100, 90, 0, 0, 0, 0,
+	//     0, 0, 0, 90, 100, 120, 125, 120, 125, 120, 100, 90, 0, 0, 0, 0,
+	//     0, 0, 0, 80, 110, 125, 90, 70, 90, 125, 110, 80, 0, 0, 0, 0,
+	//     0, 0, 0, 70, 80, 90, 80, 70, 80, 90, 80, 70, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+	//   ], [	// 车
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 150, 160, 150, 160, 150, 160, 150, 160, 150, 0, 0, 0, 0,
+	//     0, 0, 0, 160, 170, 160, 160, 150, 160, 160, 170, 160, 0, 0, 0, 0,
+	//     0, 0, 0, 170, 180, 170, 170, 160, 170, 170, 180, 170, 0, 0, 0, 0,
+	//     0, 0, 0, 170, 190, 200, 220, 240, 220, 180, 190, 170, 0, 0, 0, 0,
+	//     0, 0, 0, 180, 220, 210, 240, 250, 240, 210, 220, 180, 0, 0, 0, 0,
+	//     0, 0, 0, 180, 220, 210, 240, 250, 240, 210, 220, 180, 0, 0, 0, 0,
+	//     0, 0, 0, 180, 220, 210, 240, 250, 240, 210, 220, 180, 0, 0, 0, 0,
+	//     0, 0, 0, 170, 190, 200, 220, 240, 220, 200, 190, 170, 0, 0, 0, 0,
+	//     0, 0, 0, 170, 180, 170, 190, 250, 190, 170, 180, 170, 0, 0, 0, 0,
+	//     0, 0, 0, 160, 170, 160, 150, 150, 150, 160, 170, 160, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+	//   ], [	// 炮
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 80, 90, 80, 70, 60, 70, 80, 90, 80, 0, 0, 0, 0,
+	//     0, 0, 0, 80, 90, 80, 70, 65, 70, 80, 90, 80, 0, 0, 0, 0,
+	//     0, 0, 0, 90, 100, 80, 80, 70, 80, 80, 100, 90, 0, 0, 0, 0,
+	//     0, 0, 0, 90, 100, 90, 90, 110, 90, 90, 100, 90, 0, 0, 0, 0,
+	//     0, 0, 0, 90, 100, 90, 110, 130, 110, 90, 100, 90, 0, 0, 0, 0,
+	//     0, 0, 0, 90, 110, 90, 110, 130, 110, 90, 110, 90, 0, 0, 0, 0,
+	//     0, 0, 0, 90, 110, 90, 110, 130, 110, 90, 110, 90, 0, 0, 0, 0,
+	//     0, 0, 0, 100, 120, 90, 80, 80, 80, 90, 120, 100, 0, 0, 0, 0,
+	//     0, 0, 0, 110, 125, 100, 70, 60, 70, 100, 125, 110, 0, 0, 0, 0,
+	//     0, 0, 0, 125, 130, 100, 70, 60, 70, 100, 130, 125, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+	//   ], [	// 兵
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 10, 0, 10, 0, 15, 0, 10, 0, 10, 0, 0, 0, 0,
+	//     0, 0, 0, 10, 0, 15, 0, 15, 0, 15, 0, 10, 0, 0, 0, 0,
+	//     0, 0, 0, 15, 20, 20, 20, 20, 20, 20, 20, 15, 0, 0, 0, 0,
+	//     0, 0, 0, 20, 25, 25, 30, 30, 30, 25, 25, 20, 0, 0, 0, 0,
+	//     0, 0, 0, 25, 30, 30, 40, 40, 40, 30, 30, 25, 0, 0, 0, 0,
+	//     0, 0, 0, 25, 30, 40, 50, 60, 50, 40, 30, 25, 0, 0, 0, 0,
+	//     0, 0, 0, 10, 10, 10, 20, 25, 20, 10, 10, 10, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+	//   ]
+	// ]
+
+	const WhitePositionValues = [
+	  [	// 帅（与兵合并）
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 9, 9, 9, 11, 13, 11, 9, 9, 9, 0, 0, 0, 0,
+	    0, 0, 0, 19, 24, 34, 42, 44, 42, 34, 24, 19, 0, 0, 0, 0,
+	    0, 0, 0, 19, 24, 32, 37, 37, 37, 32, 24, 19, 0, 0, 0, 0,
+	    0, 0, 0, 19, 23, 27, 29, 30, 29, 27, 23, 19, 0, 0, 0, 0,
+	    0, 0, 0, 14, 18, 20, 27, 29, 27, 20, 18, 14, 0, 0, 0, 0,
+	    0, 0, 0, 7, 0, 13, 0, 16, 0, 13, 0, 7, 0, 0, 0, 0,
+	    0, 0, 0, 7, 0, 7, 0, 15, 0, 7, 0, 7, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 11, 15, 11, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  ], [	// 仕
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 20, 0, 0, 0, 20, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 18, 0, 0, 20, 23, 20, 0, 0, 18, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 23, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 20, 20, 0, 20, 20, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  ], [	// 相
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 20, 0, 0, 0, 20, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 18, 0, 0, 20, 23, 20, 0, 0, 18, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 23, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 20, 20, 0, 20, 20, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  ], [	// 马
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 90, 90, 90, 96, 90, 96, 90, 90, 90, 0, 0, 0, 0,
+	    0, 0, 0, 90, 96, 103, 97, 94, 97, 103, 96, 90, 0, 0, 0, 0,
+	    0, 0, 0, 92, 98, 99, 103, 99, 103, 99, 98, 92, 0, 0, 0, 0,
+	    0, 0, 0, 93, 108, 100, 107, 100, 107, 100, 108, 93, 0, 0, 0, 0,
+	    0, 0, 0, 90, 100, 99, 103, 104, 103, 99, 100, 90, 0, 0, 0, 0,
+	    0, 0, 0, 90, 98, 101, 102, 103, 102, 101, 98, 90, 0, 0, 0, 0,
+	    0, 0, 0, 92, 94, 98, 95, 98, 95, 98, 94, 92, 0, 0, 0, 0,
+	    0, 0, 0, 93, 92, 94, 95, 92, 95, 94, 92, 93, 0, 0, 0, 0,
+	    0, 0, 0, 85, 90, 92, 93, 78, 93, 92, 90, 85, 0, 0, 0, 0,
+	    0, 0, 0, 88, 85, 90, 88, 90, 88, 90, 85, 88, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  ], [	// 车
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 206, 208, 207, 213, 214, 213, 207, 208, 206, 0, 0, 0, 0,
+	    0, 0, 0, 206, 212, 209, 216, 233, 216, 209, 212, 206, 0, 0, 0, 0,
+	    0, 0, 0, 206, 208, 207, 214, 216, 214, 207, 208, 206, 0, 0, 0, 0,
+	    0, 0, 0, 206, 213, 213, 216, 216, 216, 213, 213, 206, 0, 0, 0, 0,
+	    0, 0, 0, 208, 211, 211, 214, 215, 214, 211, 211, 208, 0, 0, 0, 0,
+	    0, 0, 0, 208, 212, 212, 214, 215, 214, 212, 212, 208, 0, 0, 0, 0,
+	    0, 0, 0, 204, 209, 204, 212, 214, 212, 204, 209, 204, 0, 0, 0, 0,
+	    0, 0, 0, 198, 208, 204, 212, 212, 212, 204, 208, 198, 0, 0, 0, 0,
+	    0, 0, 0, 200, 208, 206, 212, 200, 212, 206, 208, 200, 0, 0, 0, 0,
+	    0, 0, 0, 194, 206, 204, 212, 200, 212, 204, 206, 194, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  ], [	// 炮
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 100, 100, 96, 91, 90, 91, 96, 100, 100, 0, 0, 0, 0,
+	    0, 0, 0, 98, 98, 96, 92, 89, 92, 96, 98, 98, 0, 0, 0, 0,
+	    0, 0, 0, 97, 97, 96, 91, 92, 91, 96, 97, 97, 0, 0, 0, 0,
+	    0, 0, 0, 96, 99, 99, 98, 100, 98, 99, 99, 96, 0, 0, 0, 0,
+	    0, 0, 0, 96, 96, 96, 96, 100, 96, 96, 96, 96, 0, 0, 0, 0,
+	    0, 0, 0, 95, 96, 99, 96, 100, 96, 99, 96, 95, 0, 0, 0, 0,
+	    0, 0, 0, 96, 96, 96, 96, 96, 96, 96, 96, 96, 0, 0, 0, 0,
+	    0, 0, 0, 97, 96, 100, 99, 101, 99, 100, 96, 97, 0, 0, 0, 0,
+	    0, 0, 0, 96, 97, 98, 98, 98, 98, 98, 97, 96, 0, 0, 0, 0,
+	    0, 0, 0, 96, 96, 97, 99, 99, 99, 97, 96, 96, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  ], [	// 兵（与帅合并）
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 9, 9, 9, 11, 13, 11, 9, 9, 9, 0, 0, 0, 0,
+	    0, 0, 0, 19, 24, 34, 42, 44, 42, 34, 24, 19, 0, 0, 0, 0,
+	    0, 0, 0, 19, 24, 32, 37, 37, 37, 32, 24, 19, 0, 0, 0, 0,
+	    0, 0, 0, 19, 23, 27, 29, 30, 29, 27, 23, 19, 0, 0, 0, 0,
+	    0, 0, 0, 14, 18, 20, 27, 29, 27, 20, 18, 14, 0, 0, 0, 0,
+	    0, 0, 0, 7, 0, 13, 0, 16, 0, 13, 0, 7, 0, 0, 0, 0,
+	    0, 0, 0, 7, 0, 7, 0, 15, 0, 7, 0, 7, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 11, 15, 11, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  ],
+	]
+
+	const BlackPositionValues = WhitePositionValues.map((board) =>
+	  board.map((piecePosScore, index, array) => {
+	    if (index % 16 === 15) {
+	      return index
+	    }
+	    const mirrorPos = 254 - index
+	    return array[mirrorPos]
+	  }))
+
+	const PositionValues = [
+	  //white
+	  WhitePositionValues,
+
+	  //black
+	  BlackPositionValues
+	]
+
+	exports.maxDepth = 200
+	exports.unknownValue = 1000000000
+	exports.checkmatedValue = 1000000
+	exports.winValue = exports.checkmatedValue - exports.maxDepth
+	exports.banValue = exports.checkmatedValue - exports.maxDepth + 100
+	exports.drawValue = 20
+	exports.nullOkMargin = 200
+	exports.nullSafeMargin = 400
+
+
+	// const PositionValues = 
+	// [
+	// 	[
+	// 		[ // ˧(��)
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  1,  1,  1,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0, 10, 10, 10,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0, 15, 20, 15,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
+	//     ], 
+	// 		[ // ��(ʿ)
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0, 30,  0, 30,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0, 22,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0, 30,  0, 30,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
+	//     ], 
+	// 		[ // ��(��)
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0, 25,  0,  0,  0, 25,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0, 20,  0,  0,  0, 35,  0,  0,  0, 20,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0, 30,  0,  0,  0, 30,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
+	//     ], 
+	// 		[// ��
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0, 70, 80, 90, 80, 70, 80, 90, 80, 70,  0,  0,  0,  0,
+	// 			0,  0,  0, 80,110,125, 90, 70, 90,125,110, 80,  0,  0,  0,  0,
+	// 			0,  0,  0, 90,100,120,125,120,125,120,100, 90,  0,  0,  0,  0,
+	// 			0,  0,  0, 90,100,120,130,110,130,120,100, 90,  0,  0,  0,  0,
+	// 			0,  0,  0, 90,110,110,120,100,120,110,110, 90,  0,  0,  0,  0,
+	// 			0,  0,  0, 90,100,100,110,100,110,100,100, 90,  0,  0,  0,  0,
+	// 			0,  0,  0, 80, 90,100,100, 90,100,100, 90, 80,  0,  0,  0,  0,
+	// 			0,  0,  0, 80, 80, 90, 90, 80, 90, 90, 80, 80,  0,  0,  0,  0,
+	// 			0,  0,  0, 70, 75, 75, 70, 50, 70, 75, 75, 70,  0,  0,  0,  0,
+	// 			0,  0,  0, 60, 70, 75, 70, 60, 70, 75, 70, 60,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
+	//     ],
+
+	// 		[ // ��
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,160,170,160,150,150,150,160,170,160,  0,  0,  0,  0,
+	// 			0,  0,  0,170,180,170,190,250,190,170,180,170,  0,  0,  0,  0,
+	// 			0,  0,  0,170,190,200,220,240,220,200,190,170,  0,  0,  0,  0,
+	// 			0,  0,  0,180,220,210,240,250,240,210,220,180,  0,  0,  0,  0,
+	// 			0,  0,  0,180,220,210,240,250,240,210,220,180,  0,  0,  0,  0,
+	// 			0,  0,  0,180,220,210,240,250,240,210,220,180,  0,  0,  0,  0,
+	// 			0,  0,  0,170,190,180,220,240,220,200,190,170,  0,  0,  0,  0,
+	// 			0,  0,  0,170,180,170,170,160,170,170,180,170,  0,  0,  0,  0,
+	// 			0,  0,  0,160,170,160,160,150,160,160,170,160,  0,  0,  0,  0,
+	// 			0,  0,  0,150,160,150,160,150,160,150,160,150,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
+	// 		], 
+	// 		[ // ��
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,125,130,100, 70, 60, 70,100,130,125,  0,  0,  0,  0,
+	// 			0,  0,  0,110,125,100, 70, 60, 70,100,125,110,  0,  0,  0,  0,
+	// 			0,  0,  0,100,120, 90, 80, 80, 80, 90,120,100,  0,  0,  0,  0,
+	// 			0,  0,  0, 90,110, 90,110,130,110, 90,110, 90,  0,  0,  0,  0,
+	// 			0,  0,  0, 90,110, 90,110,130,110, 90,110, 90,  0,  0,  0,  0,
+	// 			0,  0,  0, 90,100, 90,110,130,110, 90,100, 90,  0,  0,  0,  0,
+	// 			0,  0,  0, 90,100, 90, 90,110, 90, 90,100, 90,  0,  0,  0,  0,
+	// 			0,  0,  0, 90,100, 80, 80, 70, 80, 80,100, 90,  0,  0,  0,  0,
+	// 			0,  0,  0, 80, 90, 80, 70, 65, 70, 80, 90, 80,  0,  0,  0,  0,
+	// 			0,  0,  0, 80, 90, 80, 70, 60, 70, 80, 90, 80,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
+	//     ], 
+	// 		[ // ��(��)
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0, 10, 10, 10, 20, 25, 20, 10, 10, 10,  0,  0,  0,  0,
+	// 			0,  0,  0, 25, 30, 40, 50, 60, 50, 40, 30, 25,  0,  0,  0,  0,
+	// 			0,  0,  0, 25, 30, 30, 40, 40, 40, 30, 30, 25,  0,  0,  0,  0,
+	// 			0,  0,  0, 20, 25, 25, 30, 30, 30, 25, 25, 20,  0,  0,  0,  0,
+	// 			0,  0,  0, 15, 20, 20, 20, 20, 20, 20, 20, 15,  0,  0,  0,  0,
+	// 			0,  0,  0, 10,  0, 15,  0, 15,  0, 15,  0, 10,  0,  0,  0,  0,
+	// 			0,  0,  0, 10,  0, 10,  0, 15,  0, 10,  0, 10,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
+	//     ] 
+	//   ],
+	// 	[
+	// 		[//�ڽ�
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0, 15, 20, 15,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0, 10, 10, 10,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  1,  1,  1,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
+	// 		],
+	// 		[//��ʿ
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0, 30,  0, 30,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0, 22,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0, 30,  0, 30,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0			
+	//     ],
+	// 		[//����
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0, 30,  0,  0,  0, 30,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0, 20,  0,  0,  0, 35,  0,  0,  0, 20,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0, 25,  0,  0,  0, 25,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
+	// 		],
+	// 		[//����
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0, 60, 70, 75, 70, 60, 70, 75, 70, 60,  0,  0,  0,  0,
+	// 			0,  0,  0, 70, 75, 75, 70, 50, 70, 75, 75, 70,  0,  0,  0,  0,
+	// 			0,  0,  0, 80, 80, 90, 90, 80, 90, 90, 80, 80,  0,  0,  0,  0,
+	// 			0,  0,  0, 80, 90,100,100, 90,100,100, 90, 80,  0,  0,  0,  0,
+	// 			0,  0,  0, 90,100,100,110,100,110,100,100, 90,  0,  0,  0,  0,
+	// 			0,  0,  0, 90,110,110,120,100,120,110,110, 90,  0,  0,  0,  0,
+	// 			0,  0,  0, 90,100,120,130,110,130,120,100, 90,  0,  0,  0,  0,
+	// 			0,  0,  0, 90,100,120,125,120,125,120,100, 90,  0,  0,  0,  0,
+	// 			0,  0,  0, 80,110,125, 90, 70, 90,125,110, 80,  0,  0,  0,  0,
+	// 			0,  0,  0, 70, 80, 90, 80, 70, 80, 90, 80, 70,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
+	//     ],
+	// 		[//�ڳ�
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,150,160,150,160,150,160,150,160,150,  0,  0,  0,  0,
+	// 			0,  0,  0,160,170,160,160,150,160,160,170,160,  0,  0,  0,  0,
+	// 			0,  0,  0,170,180,170,170,160,170,170,180,170,  0,  0,  0,  0,
+	// 			0,  0,  0,170,190,200,220,240,220,180,190,170,  0,  0,  0,  0,
+	// 			0,  0,  0,180,220,210,240,250,240,210,220,180,  0,  0,  0,  0,
+	// 			0,  0,  0,180,220,210,240,250,240,210,220,180,  0,  0,  0,  0,
+	// 			0,  0,  0,180,220,210,240,250,240,210,220,180,  0,  0,  0,  0,
+	// 			0,  0,  0,170,190,200,220,240,220,200,190,170,  0,  0,  0,  0,
+	// 			0,  0,  0,170,180,170,190,250,190,170,180,170,  0,  0,  0,  0,
+	// 			0,  0,  0,160,170,160,150,150,150,160,170,160,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
+	//     ],
+	// 		[//����
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0, 80, 90, 80, 70, 60, 70, 80, 90, 80,  0,  0,  0,  0,
+	// 			0,  0,  0, 80, 90, 80, 70, 65, 70, 80, 90, 80,  0,  0,  0,  0,
+	// 			0,  0,  0, 90,100, 80, 80, 70, 80, 80,100, 90,  0,  0,  0,  0,
+	// 			0,  0,  0, 90,100, 90, 90,110, 90, 90,100, 90,  0,  0,  0,  0,
+	// 			0,  0,  0, 90,100, 90,110,130,110, 90,100, 90,  0,  0,  0,  0,
+	// 			0,  0,  0, 90,110, 90,110,130,110, 90,110, 90,  0,  0,  0,  0,
+	// 			0,  0,  0, 90,110, 90,110,130,110, 90,110, 90,  0,  0,  0,  0,
+	// 			0,  0,  0,100,120, 90, 80, 80, 80, 90,120,100,  0,  0,  0,  0,
+	// 			0,  0,  0,110,125,100, 70, 60, 70,100,125,110,  0,  0,  0,  0,
+	// 			0,  0,  0,125,130,100, 70, 60, 70,100,130,125,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
+	//     ],
+	// 		[//�ڱ�
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0, 10,  0, 10,  0, 15,  0, 10,  0, 10,  0,  0,  0,  0,
+	// 			0,  0,  0, 10,  0, 15,  0, 15,  0, 15,  0, 10,  0,  0,  0,  0,
+	// 			0,  0,  0, 15, 20, 20, 20, 20, 20, 20, 20, 15,  0,  0,  0,  0,
+	// 			0,  0,  0, 20, 25, 25, 30, 30, 30, 25, 25, 20,  0,  0,  0,  0,
+	// 			0,  0,  0, 25, 30, 30, 40, 40, 40, 30, 30, 25,  0,  0,  0,  0,
+	// 			0,  0,  0, 25, 30, 40, 50, 60, 50, 40, 30, 25,  0,  0,  0,  0,
+	// 			0,  0,  0, 10, 10, 10, 20, 25, 20, 10, 10, 10,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+	// 			0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
+	//     ]
+	//   ]
+	// ]
+
+
+	//棋子编号，对应的灵敏度得分
+	const PieceNumToMoveScore = [
+	  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	  2, 2, 2, 2, 2, 5, 5, 4, 4, 3, 3, 2, 2, 2, 2, 2,
+	  2, 2, 2, 2, 2, 5, 5, 4, 4, 3, 3, 2, 2, 2, 2, 2,
+	]
+
+	//获得红棋棋子位置的得分
+	exports.evalWhite = function (pos) {
+	  let wValue = 0
+	  for (let i = 16; i < 32; i++) {
+	    //没被吃
+	    if (pos.piece[i]) {
+	      wValue += PositionValues[0][PieceNumToType[i]][pos.piece[i]]
+	    }
+	  }
+
+	  return wValue
+	}
+
+	//获得黑棋棋子位置的得分
+	exports.evalBlack = function (pos) {
+	  let bValue = 0
+	  for (let i = 32; i < 48; i++) {
+	    //没被吃
+	    if (pos.piece[i]) {
+	      bValue += PositionValues[1][PieceNumToType[i]][pos.piece[i]]
+	    }
+	  }
+
+	  return bValue
+	}
+
+	function evalMove(pos, sideTag) {
+	  const moves = []
+	  let moveValue = 0
+
+	  //帅
+	  const kingPos = pos.piece[sideTag]
+	  moveValue += KingMove(pos, moves, kingPos) * PieceNumToMoveScore[sideTag]
+
+	  //士
+	  for (let i = 1; i <= 2; i++) {
+	    const advisorPos = pos.piece[sideTag + i]
+	    moveValue += AdvisorMove(pos, moves, advisorPos) * PieceNumToMoveScore[sideTag + i]
+	  }
+
+	  //象
+	  for (let i = 3; i <= 4; i++) {
+	    const bishopPos = pos.piece[sideTag + i]
+	    moveValue += BishopMove(pos, moves, bishopPos) * PieceNumToMoveScore[sideTag + i]
+	  }
+
+	  //马
+	  for (let i = 5; i <= 6; i++) {
+	    const knightPos = pos.piece[sideTag + i]
+	    moveValue += KnightMove(pos, moves, knightPos) * PieceNumToMoveScore[sideTag + i]
+	  }
+
+	  //车
+	  for (let i = 7; i <= 8; i++) {
+	    const rookPos = pos.piece[sideTag + i]
+	    moveValue += RookMove(pos, moves, rookPos) * PieceNumToMoveScore[sideTag + i]
+	  }
+
+	  //炮
+	  for (let i = 9; i <= 10; i++) {
+	    const cannonPos = pos.piece[sideTag + i]
+	    moveValue += CannonMove(pos, moves, cannonPos) * PieceNumToMoveScore[sideTag + i]
+	  }
+
+	  //兵
+	  for (let i = 11; i <= 15; i++) {
+	    const pawnPos = pos.piece[sideTag + i]
+	    moveValue += PawnMove(pos, moves, pawnPos) * PieceNumToMoveScore[sideTag + i]
+	  }
+
+	  return moveValue
+	}
+
+	exports.evalWhiteMove = function (pos) {
+	  let isChange = false
+
+	  if (pos.side === 1) {
+	    isChange = true
+	    pos.changeSide()
+	  }
+	  const moveValue = evalMove(pos, 16)
+
+	  if (isChange) {
+	    pos.changeSide()
+	  }
+
+	  return moveValue
+	}
+
+	exports.evalBlackMove = function (pos) {
+	  let isChange = false
+
+	  if (pos.side === 0) {
+	    isChange = true
+	    pos.changeSide()
+	  }
+	  const moveValue = evalMove(pos, 32)
+
+	  if (isChange) {
+	    pos.changeSide()
+	  }
+
+	  return moveValue
+	}
+
+/***/ },
+/* 15 */
+/***/ function(module, exports, __webpack_require__) {
+
+	const { unknownValue, winValue, banValue, drawValue, checkmatedValue } = __webpack_require__(14)
+
+	const hashAlpha = 0
+	const hashExact = 1
+	const hashBeta = 2
+
+	const zobristFracMax = Math.pow(2, 16) - 1
+	const zobristFracMax2 = Math.pow(2, 32) - 1
+
+	function rand16() {
+	  return Math.floor(Math.random() * (zobristFracMax + 1))
+	}
+
+	class Zobrist {
+	  constructor(first = 0, second = 0, thrid = 0, last = 0) {
+	    this.first = first
+	    this.second = second
+	    this.thrid = thrid
+	    this.last = last
+	  }
+
+	  and(number) {
+	    if (number > zobristFracMax) {
+	      const last = this.last & (number & zobristFracMax)
+	      const thrid = this.thrid & (number >> 16)
+	      return (thrid << 16) + last
+	    } else {
+	      return this.last & number
+	    }
+	  }
+
+	  xor(zobrist) {
+	    return new Zobrist(zobrist.first ^ this.first, zobrist.second ^ this.second, zobrist.thrid ^ this.thrid, zobrist.last ^ this.last)
+	  }
+
+	  equal(zobrist) {
+	    return this.first === zobrist.first && this.second === zobrist.second && this.thrid === zobrist.thrid && this.last === zobrist.last
+	  }
+	}
+
+	function generateNoEmptyZobirstNode() {
+	  const key = new Zobrist(rand16(), rand16(), rand16(), rand16())
+	  const check = new Zobrist(rand16(), rand16(), rand16(), rand16())
+	  if (check.equal(new Zobrist())) {
+	    return generateNoEmptyZobirstNode()
+	  }
+	  return new ZobristNode(key, check)
+	}
+
+	//每种棋子在棋盘上生成的zobrist值
+	function initZobristTable() {
+	  //格式为：zobristTable[side][pieceTypeNum][position]
+
+	  let zobristTable = []
+
+	  for (let k = 0; k < 2; k++) {
+	    zobristTable[k] = []
+	    for (let i = 0; i < 7; i++) {
+	      zobristTable[k][i] = []
+	      for (let j = 0; j < 256; j++) {
+	        zobristTable[k][i][j] = generateNoEmptyZobirstNode()
+	      }
+	    }
+	  }
+
+	  return zobristTable
+	}
+
+	function initZobristSide() {
+	  return generateNoEmptyZobirstNode()
+	}
+
+	//一个新的局面的zobrist值
+	class ZobristNode {
+	  constructor(key = new Zobrist(), check = new Zobrist()) {
+	    this.key = key
+	    this.check = check
+	  }
+
+	  xor(zobristNode) {
+	    return new ZobristNode(zobristNode.key.xor(this.key), zobristNode.check.xor(this.check))
+	  }
+
+	  and(zobristNode) {
+	    return new ZobristNode(zobristNode.key.and(this.key), zobristNode.check.and(this.check))
+	  }
+
+	  equal(zobristNode) {
+	    return this.check.equal(zobristNode.check)
+	  }
+	}
+
+	//存储一个局面的value
+	class HashNode {
+	  constructor(zobristNode = new ZobristNode(), value = unknownValue, downwardDepth = 0, flag = hashExact, mv) {
+	    this.zobristNode = zobristNode
+	    this.value = value
+	    this.downwardDepth = downwardDepth
+	    this.flag = flag
+	    this.mv = mv
+	  }
+	}
+
+	//存储每个局面的value
+	class HashTable {
+	  constructor() {
+	    //低于2的32次方
+	    this.hashMask = 1024 * 1024 - 1
+	    this.hashTable = []
+	  }
+
+	  clearHashTable() {
+	    this.hashTable = []
+	  }
+
+	  _getIndex(zobristNode) {
+	    return zobristNode.key.and(this.hashMask)
+	  }
+
+	  //其中downwardDepth是当前局面到搜索到的最后一层的高度，ply是根节点到当前节点的高度,ply只对将军有用，不保存
+	  saveHashTable(newZobristNode, value, downwardDepth, flag, goodMove, ply = 0) {
+	    if (value < -winValue) {
+	      value = value - ply
+	    } else if (value > winValue) {
+	      value = value + ply
+	    }
+
+	    this.hashTable[this._getIndex(newZobristNode)] = new HashNode(newZobristNode, value, downwardDepth, flag, goodMove)
+	  }
+
+	  readHashTable(newZobristNode, currentDownwardDepth, currentAlpha, currentBeta, ply = 0) {
+	    const hashNode = this.hashTable[this._getIndex(newZobristNode)]
+
+	    //0. 没找到对应的键
+	    if (!hashNode) return
+
+	    const { zobristNode, value, downwardDepth, flag, mv } = hashNode
+
+	    //1. 校验值相同
+	    if (zobristNode && zobristNode.equal(newZobristNode)) {
+	      //2. 置换表高度不够深
+	      if (currentDownwardDepth > downwardDepth) {
+	        //如果是将军的值，那么就算不够深也是pv值
+	        if (flag === hashExact) {
+	          if (value < -winValue) {
+	            if (value >= -banValue) {
+	              return
+	            }
+	            return value + ply
+	          } else if (value > winValue) {
+	            if (value <= banValue) {
+	              return
+	            }
+	            return value - ply
+	          } else if (value === drawValue || value === -drawValue) {
+	            return
+	          }
+	        }
+	      } 
+	      //3 置换表里深度更深
+	      else {
+	        //2.1 是确定的值
+	        if (flag === hashExact) {
+	          return value
+	        }
+
+	        //2.2 保存的是一个alpha值
+	        else if (flag === hashAlpha) {
+	          //保存的alpha值若小于当前alpha值，就返回当前alpha值，因为pv值是小于保存的alpha值的，也小于当前alpha值
+	          if (currentAlpha >= value) {
+	            return currentAlpha
+	          }
+	        }
+
+	        //2.3 保存的是一个beta值
+	        else if (flag === hashBeta) {
+	          //保存的beta值若大于当前beta值，就返回当前beta值，因为pv值是大于保存的beta值的，也大于当前beta值
+	          if (currentBeta <= value) {
+	            return currentBeta
+	          }
+	        }
+
+	        //2.4 没找到值，返回一个好的启发式走法
+	        return mv
+	      }
+	    }
+	  }
+	}
+
+	const zobristTable = initZobristTable()
+	const zobristSide = initZobristSide()
+
+	module.exports = {
+	  Zobrist,
+	  rand16,
+	  ZobristNode,
+	  zobristTable,
+	  zobristSide,
+	  HashTable,
+	  hashAlpha,
+	  hashBeta,
+	  hashExact
+	}
+
+
+/***/ },
+/* 16 */
+/***/ function(module, exports, __webpack_require__) {
+
+	const Pos = __webpack_require__(12)
+	const { checkmatedValue, winValue, banValue, drawValue } = __webpack_require__(14)
+	const { HashTable, hashAlpha, hashBeta, hashExact } = __webpack_require__(15)
+	const { Move } = __webpack_require__(13)
+
+	//用于判断是否将死
+	function MinMax(pos, maxDepth = 1) {
+	  let resultMove = null
+
+	  const score = (function helper(depth) {
+	    if (depth === 0) {
+	      return pos.evaluate()
+	    }
+
+	    let bestMove = null
+	    let bestScore = -Infinity
+
+	    for (let move of pos.generateMoves()) {
+	      if (pos.makeMove(move)) {
+	        const score = -helper(depth - 1)
+	        pos.unMakeMove()
+	        if (score > bestScore) {
+	          bestMove = move
+	          bestScore = score
+	        }
+	      }
+	    }
+
+	    if (bestMove == null) {
+	      return (maxDepth - depth) - checkmatedValue
+	    }
+
+	    if (depth == maxDepth) {
+	      resultMove = bestMove
+	    }
+	    return bestScore
+	  })(maxDepth)
+
+	  return resultMove
+	}
+
+	const timeout = 5 * 1000
+	const timeoutValue = 300000
+	const limitDepth = 40
+	const nullDepth = 2
+	const hashFakeDepth = 50
+
+	let hashTable = new HashTable()
+	let quiescentHashTable = new HashTable()
+	let fullHistoryTable = Array.from(Array(256)).map(() => Array.from(Array(256)).map(() => 0))
+	let quiescentHistoryTable = Array.from(Array(256)).map(() => Array.from(Array(256)).map(() => 0))
+	let killerMove = []
+	let quiescentKillerMove = []
+	let isFinished = true
+	let bestMove = null
+	let searchDepth = 1
+
+
+	//重置整个搜索
+	function initial() {
+	  hashTable = new HashTable()
+	  quiescentHashTable = new HashTable()
+	  fullHistoryTable = Array.from(Array(256)).map(() => Array.from(Array(256)).map(() => 0))
+	  quiescentHistoryTable = Array.from(Array(256)).map(() => Array.from(Array(256)).map(() => 0))
+	  killerMove = []
+	  quiescentKillerMove = []
+	  isFinished = true
+	  searchDepth = 1
+	  bestMove = null
+	}
+
+	//对走法进行排序
+	const sortingMoves = (hashMv, ply, historyTable = fullHistoryTable) => (move1, move2) => {
+	  //置换表排序
+	  if (move1 === hashMv) {
+	    return -1
+	  } else if (move2 === hashMv) {
+	    return 1
+	  }
+	  else {
+	    //按杀手1排序
+	    if (killerMove[ply]) {
+	      if (killerMove[ply][0] && killerMove[ply][0].equal(move1)) {
+	        return -1
+	      } else if (killerMove[ply][0] && killerMove[ply][0].equal(move2)) {
+	        return 1
+	      }
+
+	      //按杀手2排序
+	      if (killerMove[ply][1] && killerMove[ply][1].equal(move1)) {
+	        return -1
+	      } else if (killerMove[ply][1] && killerMove[ply][1].equal(move2)) {
+	        return 1
+	      }
+	    }
+
+	    //mvv/lva排序吃子走法
+	    if (move1.wvl != null && move2.wvl != null) {
+	      const gap = move1.wvl - move2.wvl
+	      return gap > 0 ? -1 : gap === 0 ? 0 : 1
+	    } else if (move1.wvl != null && move2.wvl == null) {
+	      return -1
+	    } else if (move2.wvl != null && move1.wvl == null) {
+	      return 1
+	    }
+
+	    // 历史表排序不吃子走法
+	    else {
+	      const gap = historyTable[move1.from][move1.to] - historyTable[move2.from][move2.to]
+	      return gap > 0 ? -1 : gap === 0 ? 0 : 1
+	    }
+	  }
+	}
+
+	//保存历史表走法，depth是向下的层数，ply是向上的层数
+	function saveGoodMove(mv, depth, ply, historyTable = fullHistoryTable) {
+	  historyTable[mv.from][mv.to] += depth
+
+	  //防止溢出
+	  if (historyTable[mv.from][mv.to] > 240) {
+	    historyTable.forEach((row, from) => {
+	      row.forEach((score, to) => {
+	        historyTable[from][to] = score / 4
+	      })
+	    })
+	  }
+
+	  if (killerMove[ply] != null) {
+	    killerMove[ply] = [mv, killerMove[ply][0]]
+	  } else {
+	    killerMove[ply] = [mv]
+	  }
+	}
+
+	//静态搜索
+	function PVSQuiescentSearch(pos, finishTime, alpha = -Infinity, beta = Infinity) {
+	  // 0. 判断是否超时
+	  if (Date.now() > finishTime) {
+	    isFinished = false
+	    return timeoutValue
+	  }
+
+	  //1. 是否走了连续将军的走法，导致局面重复
+	  const repValue = pos.repValue()
+	  if (repValue) {
+	    return repValue
+	  }
+
+	  //获得pos的zobrist值和当前已经走过的步数
+	  const zobrist = pos.zobrist
+	  const ply = pos.moveStack.length
+	  //2. 查看置换表里是否已经有走法了
+	  const hashScore = quiescentHashTable.readHashTable(zobrist, hashFakeDepth, alpha, beta, ply)
+	  let hashMv
+
+	  if (hashScore != null) {
+	    //2.1 找到了可用的得分
+	    if (typeof hashScore === 'number') {
+	      return hashScore
+	    }
+	    //2.2 找到了可用的置换表走法
+	    else if (hashScore instanceof Move) {
+	      hashMv = hashScore
+	    }
+	  }
+
+	  //2. 局面是否足够好到产生截断
+	  const score = pos.evaluate()
+	  if (score >= beta) {
+	    return score
+	  }
+
+	  //3. 到达了极限深度
+	  if (ply >= limitDepth) {
+	    return pos.evaluate()
+	  }
+
+	  //4. 初始化最低值
+	  let bestScore = score
+
+	  //5. 生成能走的走法
+	  let moves = pos.generateMoves().sort(sortingMoves(hashMv, ply, quiescentHistoryTable))
+
+	  //5.1 是否被将军中
+	  const isChecked = pos.isChecked()
+
+	  //6. 搜索所有走法
+
+	  //6.1 是否有棋可走，没有则被将死了
+	  let hasMove = false
+	  //6.2 是否是超过了alpha值（是pv值）
+	  let exceedAlpha = bestScore > alpha
+	  //6.3 是否走了至少一步（吃子或者解将）
+	  let pvFlag = false
+	  //6.4 最佳走法
+	  let bestMove
+
+	  for (let move of moves) {
+	    if (pos.makeMove(move)) {
+	      hasMove = true
+
+	      //如果正在被将军，走全部走法，如果没有被将军，走吃子走法
+	      if (isChecked || move.capture) {
+	        let score
+	        if (!pvFlag) {
+	          score = -PVSQuiescentSearch(pos, finishTime, -beta, -alpha)
+	          pvFlag = true
+	        }
+	        //若已经走过至少一个走法，走限制边界的pvs算法
+	        else {
+	          //预测下一个走法要么超过beta产生截断，要么比bestScore要差
+	          score = -PVSQuiescentSearch(pos, finishTime, -(alpha + 1), -alpha)
+
+	          //若预测失败，这个走法可能是一个好的走法，那么重新搜索pvs得分
+	          if (score > alpha && score < beta) {
+	            score = -PVSQuiescentSearch(pos, finishTime, -beta, -alpha)
+	          }
+	        }
+	        if (score >= beta) {
+	          //保存得分到置换表里
+	          quiescentHashTable.saveHashTable(zobrist, score, hashFakeDepth, hashBeta, move, ply)
+	          //保存走法到历史表里
+	          saveGoodMove(move, 1, ply, quiescentHistoryTable)
+	          pos.unMakeMove()
+	          return score
+	        }
+
+	        if (score > bestScore) {
+	          bestScore = score
+	          bestMove = move
+
+	          if (score > alpha) {
+	            alpha = score
+	            exceedAlpha = true
+	          }
+	        }
+	      }
+	      pos.unMakeMove()
+	    }
+	  }
+
+	  //7. 返回得分，如果没有走法，返回将死得分
+	  if (hasMove) {
+	    //7.1 超过了alpha，是pv值
+	    if (exceedAlpha) {
+	      //7.1.1 至少走了一步吃子走法或者应将走法，则添加到历史表里
+	      if (bestMove) {
+	        saveGoodMove(bestMove, 1, ply, quiescentHistoryTable)
+	      }
+	      quiescentHashTable.saveHashTable(zobrist, bestScore, hashFakeDepth, hashExact, bestMove, ply)
+	      return bestScore
+	    }
+	    //7.2 没有超过alpha
+	    else {
+	      quiescentHashTable.saveHashTable(zobrist, bestScore, hashFakeDepth, hashAlpha, bestMove, ply)
+	      return bestScore
+	    }
+	  }
+	  //被将死了 
+	  else {
+	    return ply - checkmatedValue
+	  }
+	}
+
+	function QuiescentSearch(pos, alpha, beta) {
+	  const ply = pos.moveStack.length
+
+	  //1. 是否走了连续将军的走法，导致局面重复
+	  const repValue = pos.repValue()
+	  if (repValue) {
+	    return repValue
+	  }
+
+	  //2. 局面是否足够好到产生截断
+	  const score = pos.evaluate()
+	  if (score >= beta) {
+	    return score
+	  }
+
+	  //3. 到达了极限深度
+	  if (ply >= limitDepth) {
+	    return pos.evaluate()
+	  }
+
+	  //4. 初始化最低值
+	  let bestScore = score
+
+	  //5. 生成能走的走法
+	  let moves = pos.generateMoves()
+
+	  //5.1 是否被将军中
+	  const isChecked = pos.isChecked()
+
+	  //5.2 是否有棋可走，没有则被将死了
+	  let hasMove = false
+
+	  //6. 搜索所有走法
+	  for (let move of moves) {
+	    if (pos.makeMove(move)) {
+	      hasMove = true
+
+	      //如果正在被将军，走全部走法，如果没有被将军，走吃子走法
+	      if (isChecked || move.capture) {
+	        const score = -QuiescentSearch(pos, -beta, -alpha)
+	        if (score >= beta) {
+	          pos.unMakeMove()
+	          return score
+	        }
+
+	        if (score > bestScore) {
+	          bestScore = score
+
+	          if (score > alpha) {
+	            alpha = score
+	          }
+	        }
+	      }
+	      pos.unMakeMove()
+	    }
+	  }
+
+	  //7. 返回得分，如果没有走法，返回将死得分
+	  return hasMove ? bestScore : ply - checkmatedValue
+	}
+
+	function PVS(pos, finishTime, alpha = -Infinity, beta = Infinity, depth, nullMoveAble = true) {
+	  // 0. 判断是否超时
+	  if (Date.now() > finishTime) {
+	    isFinished = false
+	    return timeoutValue
+	  }
+
+	  // 1. 查看当前局面是否重复了
+	  const repValue = pos.repValue()
+	  if (repValue) {
+	    return repValue
+	  }
+
+	  //获得pos的zobrist值和当前已经走过的步数
+	  const zobrist = pos.zobrist
+	  const ply = pos.moveStack.length
+
+	  //2. 查看置换表里是否已经有走法了
+	  const hashScore = hashTable.readHashTable(zobrist, depth, alpha, beta, ply)
+	  let hashMv
+
+	  if (hashScore != null) {
+	    //2.1 找到了可用的得分
+	    if (typeof hashScore === 'number') {
+	      return hashScore
+	    }
+	    //2.2 找到了可用的置换表走法
+	    else if (hashScore instanceof Move) {
+	      hashMv = hashScore
+	    }
+	  }
+
+	  //3. 查看是否到达水平线,小于0是因为空步可能导致深度小于0(未启动空步，加入空步导致未知的结果不一致，之后可能会加入)
+	  if (depth <= 0) {
+	    const eval = PVSQuiescentSearch(pos, finishTime, alpha, beta)
+	    return eval
+	  }
+
+	  //4. 根据置换表，杀手走法，历史表排序走法
+	  const moves = pos.generateMoves().sort(sortingMoves(hashMv, ply))
+
+	  //5. 按顺序进行pvs-alpha-beta算法
+	  let pvFlag = 0
+	  let bestScore = -Infinity
+	  let exceedAlpha = 0
+	  let bestMove = null
+	  for (let move of moves) {
+	    //如果这个走法是合法的(不会将死自己)
+	    if (pos.makeMove(move)) {
+	      let score
+	      //若是第一个走法，走普通的pvs算法
+	      if (!pvFlag) {
+	        score = -PVS(pos, finishTime, -beta, -alpha, depth - 1)
+	        pvFlag = 1
+	      }
+	      //若已经走过至少一个走法，走限制边界的pvs算法
+	      else {
+	        //预测下一个走法要么超过beta产生截断，要么比alpha要差
+	        score = -PVS(pos, finishTime, -(alpha + 1), -alpha, depth - 1)
+
+	        //若预测失败，这个走法可能是一个好的走法，那么重新搜索pvs得分
+	        if (score > alpha && score < beta) {
+	          score = -PVS(pos, finishTime, -beta, -alpha, depth - 1)
+	        }
+	      }
+	      pos.unMakeMove()
+
+	      //产生beta截断
+	      if (score >= beta) {
+	        //保存得分到置换表里
+	        hashTable.saveHashTable(zobrist, score, depth, hashBeta, move, ply)
+	        //保存走法到历史表里
+	        saveGoodMove(move, depth, ply)
+	        return score
+	      }
+
+	      if (score > bestScore) {
+	        bestMove = move
+	        //更新最好的得分
+	        bestScore = score
+	        //更新alpha值
+	        if (score > alpha) {
+	          alpha = score
+	          exceedAlpha = 1
+	        }
+	      }
+	    }
+	  }
+
+	  //6. 判断得分
+
+	  //6.1 搜完了整棵树
+	  if (searchDepth === depth) {
+	    return bestMove
+	  }
+
+	  //6.2 一步都没走,被将死了
+	  if (!pvFlag) {
+	    //尽量挣扎的久一点(笑)
+	    const score = ply - checkmatedValue
+	    //保存得分
+	    hashTable.saveHashTable(zobrist, score, depth, hashExact, null, ply)
+	    return score
+	  }
+	  //6.3 有走法
+	  else {
+	    //6.3.1走法是准确值，超过了初始alpha
+	    if (exceedAlpha) {
+	      //保存走法到历史表里
+	      saveGoodMove(bestMove, depth, ply)
+	      hashTable.saveHashTable(zobrist, bestScore, depth, hashExact, bestMove, ply)
+	      return bestScore
+	    }
+	    //6.3.2走法不好，比初始alpha还差
+	    else {
+	      hashTable.saveHashTable(zobrist, bestScore, depth, hashAlpha, bestMove, ply)
+	      return bestScore
+	    }
+	  }
+	}
+
+	function ComputerThinkTimer(pos, remainTime = timeout, maxDepth = 30) {
+	  initial()
+
+	  const finishTime = Date.now() + remainTime
+	  let bestMove = null
+	  for (let i = 1; i <= maxDepth; i++) {
+	    searchDepth = i
+	    console.log('=========')
+	    const resultMove = PVS(pos, finishTime, -checkmatedValue, checkmatedValue, i)
+
+	    if (resultMove && isFinished) {
+	      console.log("搜索层数: " + i)
+	      console.log(resultMove)
+	      bestMove = resultMove
+	    }
+
+	    if (Date.now() > finishTime) {
+	      break
+	    }
+	  }
+	  return bestMove
+	}
+
+	const { IntToChar, getRowAndColumn, InitialBoard } = __webpack_require__(13)
+
+	module.exports = {
+	  ComputerThinkTimer,
+	  MinMax,
+	  checkmatedValue
+	}
 
 /***/ }
 /******/ ]);

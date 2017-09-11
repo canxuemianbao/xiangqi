@@ -7,15 +7,15 @@ const {
   hashAlpha,
   hashBeta,
   hashExact
-} = require("./hashtable")
+} = require("../core/hashtable")
 
 const {
   checkmatedValue,
   winValue,
   banValue
-} = require('./evaluate')
+} = require('../core/evaluate')
 
-const Pos = require('./position')
+const Pos = require('../core/position')
 
 describe('hashtable', function () {
   beforeEach(function () {

@@ -1,7 +1,7 @@
-const Pos = require('./position')
-const { checkmatedValue, winValue, banValue, drawValue } = require('./evaluate')
+const Pos = require('../core/position')
+const { checkmatedValue, winValue, banValue, drawValue } = require('../core/evaluate')
 const { HashTable, hashAlpha, hashBeta, hashExact } = require('./hashtable')
-const { Move } = require('./util')
+const { Move } = require('../core/util')
 const {fens} = require('./testData')
 
 const timeout = 5 * 1000

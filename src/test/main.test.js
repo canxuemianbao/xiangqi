@@ -1,10 +1,10 @@
 const fs = require('fs')
 const path = require('path')
 
-const Pos = require('./position')
-const { Move } = require('./util')
-const { checkmatedValue } = require('./evaluate')
-const { HashTable, hashAlpha, hashBeta, hashExact } = require('./hashtable')
+const Pos = require('../core/position')
+const { Move } = require('../core/util')
+const { checkmatedValue } = require('../core/evaluate')
+const { HashTable, hashAlpha, hashBeta, hashExact } = require('../core/hashtable')
 
 const { fens } = require('./testData')
 

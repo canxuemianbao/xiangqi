@@ -14,9 +14,9 @@ const {
   canAttackByRook,
   canAttackByCannon,
   canAttackByPawn
-} = require('./util')
+} = require('../core/util')
 
-const Pos = require('./position')
+const Pos = require('../core/position')
 
 const { fens } = require('./testData')
 

@@ -1,9 +1,9 @@
 
 const toastr = require('toastr')
 
-const Pos = require('./core/ai2/position')
-const { ComputerThinkTimer, MinMax } = require('./core/ai2/search')
-const { banValue, drawValue, winValue } = require('./core/ai2/evaluate')
+const Pos = require('./core/position')
+const { ComputerThinkTimer, MinMax } = require('./core/search')
+const { banValue, drawValue, winValue } = require('./core/evaluate')
 
 const initialFen = 'rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w'
 
@@ -151,7 +151,7 @@ function playerConsider() {
 function computerConsider() {
   playerTurn = false
 
-  computerMove(ComputerThinkTimer(pos, 300))
+  computerMove(ComputerThinkTimer(pos))
 }
 
 let from

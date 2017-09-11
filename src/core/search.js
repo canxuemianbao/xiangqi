@@ -355,10 +355,9 @@ function PVS(pos, finishTime, alpha = -Infinity, beta = Infinity, depth, nullMov
     }
   }
 
-  //3. 查看是否到达水平线,小于0是因为空步可能导致深度小于0
+  //3. 查看是否到达水平线,小于0是因为空步可能导致深度小于0(未启动空步，加入空步导致未知的结果不一致，之后可能会加入)
   if (depth <= 0) {
     const eval = PVSQuiescentSearch(pos, finishTime, alpha, beta)
-    // const eval = pos.evaluate()
     return eval
   }
 
