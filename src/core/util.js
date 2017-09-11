@@ -19,7 +19,7 @@ exports.InitialBoard = [
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 ]
 
-const newLegalPosition = [
+const legalPosition = [
   //white
   [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -228,24 +228,6 @@ const MvvValues = [
 
 //king
 const KingDir = [-0x10, 0x01, 0x10, -0x01]
-const KingPosition = [
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-]
 
 function getPieceSide(pos, piecePos) {
   const side = pos.board[piecePos] & 16 ? 0 : 1
@@ -260,8 +242,7 @@ exports.KingMove = function (pos, moves, piecePos, capture = false) {
     const nextPiecePos = piecePos + dir
 
     //在九宫上
-    // if (KingPosition[nextPiecePos]) {
-    if (newLegalPosition[pos.side][nextPiecePos] & PositionMask[0]) {
+    if (legalPosition[pos.side][nextPiecePos] & PositionMask[0]) {
       //没有本方棋子
       if (!(pos.board[nextPiecePos] & pos.sideTag)) {
         //capture=true时只生成吃子走法
@@ -276,7 +257,7 @@ exports.KingMove = function (pos, moves, piecePos, capture = false) {
 
 exports.canAttackByKing = function (pos, piecePos, nextPiecePos) {
   //不在九宫上
-  if (!(newLegalPosition[getPieceSide(pos, piecePos).side][nextPiecePos] & PositionMask[0])) {
+  if (!(legalPosition[getPieceSide(pos, piecePos).side][nextPiecePos] & PositionMask[0])) {
     return false
   }
 
@@ -286,24 +267,6 @@ exports.canAttackByKing = function (pos, piecePos, nextPiecePos) {
 
 //advisor
 const AdvisorDir = [-0x11, -0x0f, 0x11, 0x0f]
-const AdvisorPosition = [
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-]
 
 exports.AdvisorMove = function (pos, moves, piecePos, capture = false) {
   const movesStartNum = moves.length
@@ -312,8 +275,7 @@ exports.AdvisorMove = function (pos, moves, piecePos, capture = false) {
     const nextPiecePos = piecePos + dir
 
     //在九宫上
-    // if (AdvisorPosition[nextPiecePos]) {
-    if (newLegalPosition[pos.side][nextPiecePos] & PositionMask[1]) {
+    if (legalPosition[pos.side][nextPiecePos] & PositionMask[1]) {
       //没有本方棋子
       if (!(pos.board[nextPiecePos] & pos.sideTag)) {
         //capture=true时只生成吃子走法
@@ -328,7 +290,7 @@ exports.AdvisorMove = function (pos, moves, piecePos, capture = false) {
 
 exports.canAttackByAdvisor = function (pos, piecePos, nextPiecePos) {
   //不在九宫上
-  if (!(newLegalPosition[getPieceSide(pos, piecePos).side][nextPiecePos] & PositionMask[1])) {
+  if (!(legalPosition[getPieceSide(pos, piecePos).side][nextPiecePos] & PositionMask[1])) {
     return false
   }
 
@@ -338,24 +300,6 @@ exports.canAttackByAdvisor = function (pos, piecePos, nextPiecePos) {
 //bishop
 const BishopDir = [-0x22, -0x1e, 0x22, 0x1e]
 const BishopCheck = [-0x11, -0x0f, 0x11, 0x0f]
-const BishopPosition = [
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-]
 
 exports.BishopMove = function (pos, moves, piecePos, capture = false) {
   const movesStartNum = moves.length
@@ -364,8 +308,7 @@ exports.BishopMove = function (pos, moves, piecePos, capture = false) {
     const nextPiecePos = piecePos + dir
 
     //在棋盘上
-    // if (BishopPosition[nextPiecePos] && ) {
-    if (newLegalPosition[pos.side][nextPiecePos] & PositionMask[2]) {
+    if (legalPosition[pos.side][nextPiecePos] & PositionMask[2]) {
 
       //不卡象眼
       if (pos.board[piecePos + BishopCheck[index]] === 0) {
@@ -384,7 +327,7 @@ exports.BishopMove = function (pos, moves, piecePos, capture = false) {
 
 exports.canAttackByBishop = function (pos, piecePos, nextPiecePos) {
   //不在本方河内
-  if (!(newLegalPosition[getPieceSide(pos, piecePos).side][nextPiecePos] & PositionMask[2])) {
+  if (!(legalPosition[getPieceSide(pos, piecePos).side][nextPiecePos] & PositionMask[2])) {
     return false
   }
 
@@ -394,7 +337,6 @@ exports.canAttackByBishop = function (pos, piecePos, nextPiecePos) {
 //knight
 const KnightDir = [0x0e, -0x12, -0x21, -0x1f, -0x0e, 0x12, 0x21, 0x1f]
 const KnightCheck = [-0x01, -0x01, -0x10, -0x10, 0x01, 0x01, 0x10, 0x10]
-const KnightPosition = LegalPosition
 
 exports.KnightMove = function (pos, moves, piecePos, capture = false) {
   const movesStartNum = moves.length
@@ -403,8 +345,7 @@ exports.KnightMove = function (pos, moves, piecePos, capture = false) {
     const nextPiecePos = piecePos + dir
 
     //在棋盘上
-    // if (KnightPosition[nextPiecePos]  ) {
-    if (newLegalPosition[pos.side][nextPiecePos] & PositionMask[3]) {
+    if (legalPosition[pos.side][nextPiecePos] & PositionMask[3]) {
       //不蹩马脚
       if (pos.board[piecePos + KnightCheck[index]] === 0) {
         //没有本方棋子
@@ -423,7 +364,7 @@ exports.KnightMove = function (pos, moves, piecePos, capture = false) {
 exports.canAttackByKnight = function (pos, piecePos, nextPiecePos) {
   return KnightDir.some((dir, index) => {
     //在棋盘上
-    if (newLegalPosition[getPieceSide(pos, piecePos).side][nextPiecePos] & PositionMask[3]) {
+    if (legalPosition[getPieceSide(pos, piecePos).side][nextPiecePos] & PositionMask[3]) {
       //在马的进攻方向上
       if (dir + piecePos === nextPiecePos) {
         //不蹩马脚
@@ -437,7 +378,6 @@ exports.canAttackByKnight = function (pos, piecePos, nextPiecePos) {
 
 //rook
 const RookDir = [-0x01, -0x10, 0x01, 0x10]
-const RookPosition = LegalPosition
 
 exports.RookMove = function (pos, moves, piecePos, capture = false) {
   const movesStartNum = moves.length
@@ -445,13 +385,13 @@ exports.RookMove = function (pos, moves, piecePos, capture = false) {
   RookDir.forEach((dir, index) => {
     let nextPiecePos = piecePos + dir
 
-    while ((newLegalPosition[pos.side][nextPiecePos] & PositionMask[4]) && pos.board[nextPiecePos] === 0) {
+    while ((legalPosition[pos.side][nextPiecePos] & PositionMask[4]) && pos.board[nextPiecePos] === 0) {
       SaveMove(moves, pos, piecePos, nextPiecePos, capture)
       nextPiecePos += dir
     }
 
     //在棋盘上
-    if (newLegalPosition[pos.side][nextPiecePos] & PositionMask[4]) {
+    if (legalPosition[pos.side][nextPiecePos] & PositionMask[4]) {
       //没有本方棋子
       if (!(pos.board[nextPiecePos] & pos.sideTag)) {
         //capture=true时只生成吃子走法
@@ -466,7 +406,7 @@ exports.RookMove = function (pos, moves, piecePos, capture = false) {
 
 exports.canAttackByRook = function (pos, piecePos, nextPiecePos) {
   //不在棋盘上
-  if (!(newLegalPosition[getPieceSide(pos, piecePos).side][nextPiecePos] & PositionMask[4])) {
+  if (!(legalPosition[getPieceSide(pos, piecePos).side][nextPiecePos] & PositionMask[4])) {
     return false
   }
 
@@ -493,7 +433,6 @@ exports.canAttackByRook = function (pos, piecePos, nextPiecePos) {
 
 //can
 const CannonDir = [-0x01, -0x10, 0x01, 0x10]
-const CannonPosition = LegalPosition
 
 exports.CannonMove = function (pos, moves, piecePos, capture = false) {
   const movesStartNum = moves.length
@@ -502,7 +441,7 @@ exports.CannonMove = function (pos, moves, piecePos, capture = false) {
     let nextPiecePos = piecePos + dir
 
     //查找能到的
-    while ((newLegalPosition[pos.side][nextPiecePos] & PositionMask[5]) && pos.board[nextPiecePos] === 0) {
+    while ((legalPosition[pos.side][nextPiecePos] & PositionMask[5]) && pos.board[nextPiecePos] === 0) {
       //capture=true时只生成吃子走法
       SaveMove(moves, pos, piecePos, nextPiecePos, capture)
 
@@ -510,18 +449,18 @@ exports.CannonMove = function (pos, moves, piecePos, capture = false) {
     }
 
     //不在棋盘上
-    if (!(newLegalPosition[pos.side][nextPiecePos] & PositionMask[5])) {
+    if (!(legalPosition[pos.side][nextPiecePos] & PositionMask[5])) {
       return
     }
 
     //查找能吃的
     nextPiecePos += dir
-    while ((newLegalPosition[pos.side][nextPiecePos] & PositionMask[5]) && pos.board[nextPiecePos] === 0) {
+    while ((legalPosition[pos.side][nextPiecePos] & PositionMask[5]) && pos.board[nextPiecePos] === 0) {
       nextPiecePos += dir
     }
 
     //在棋盘上
-    if (newLegalPosition[pos.side][nextPiecePos] & PositionMask[5]) {
+    if (legalPosition[pos.side][nextPiecePos] & PositionMask[5]) {
       //没有本方棋子
       if (!(pos.board[nextPiecePos] & pos.sideTag)) {
         //capture=true时只生成吃子走法
@@ -536,7 +475,7 @@ exports.CannonMove = function (pos, moves, piecePos, capture = false) {
 
 exports.canAttackByCannon = function (pos, piecePos, nextPiecePos) {
   //不在棋盘上
-  if (!(newLegalPosition[getPieceSide(pos, piecePos).side][nextPiecePos] & PositionMask[4])) {
+  if (!(legalPosition[getPieceSide(pos, piecePos).side][nextPiecePos] & PositionMask[4])) {
     return false
   }
 
@@ -575,58 +514,16 @@ const PawnDir = [
   [-0x10, -0x01, 0x01],
   [0x10, -0x01, 0x01]
 ]
-const PawnPostion = [
-  //white pawn
-  [
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-    0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0,
-    0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  ],
-
-  //black pawn
-  [
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0,
-    0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0,
-    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-    0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  ]
-]
 
 exports.PawnMove = function (pos, moves, piecePos, capture = false) {
   const movesStartNum = moves.length
   let thisPawnDir = PawnDir[pos.side]
-  // let thisPawnPosition = newLegalPosition[pos.side][nextPiecePos] & PositionMask[5]
 
   thisPawnDir.forEach((dir, index) => {
     const nextPiecePos = piecePos + dir
 
     //在兵行动位置棋盘上
-    if (newLegalPosition[pos.side][nextPiecePos] & PositionMask[6]) {
+    if (legalPosition[pos.side][nextPiecePos] & PositionMask[6]) {
       //没有本方棋子
       if (!(pos.board[nextPiecePos] & pos.sideTag)) {
         //是否只生成吃子走法
@@ -647,7 +544,7 @@ exports.canAttackByPawn = function (pos, piecePos, nextPiecePos) {
   const side = getPieceSide(pos, piecePos).side
   return PawnDir[side].some((dir, index) => {
     //在兵行动位置棋盘上
-    if (newLegalPosition[side][nextPiecePos] & PositionMask[6]) {
+    if (legalPosition[side][nextPiecePos] & PositionMask[6]) {
       //在兵进攻的方向上
       if (piecePos + dir === nextPiecePos) {
         return true
