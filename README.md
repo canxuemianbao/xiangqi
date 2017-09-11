@@ -2,9 +2,11 @@
 
 使用pvs实现的中国象棋
 
-#start
+# install
 npm install
+
+## start
 npm start
 
-#test
-npm test
+## test
+npm test 
