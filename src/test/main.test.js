@@ -857,12 +857,12 @@ function main(fileName, func, maxDepth = 7) {
     }
   })
 
-  fs.open(path.resolve(`test_result/${fileName}`), 'w', () => {
-    fs.writeFile(path.resolve(`test_result/${fileName}`), resultInfo, function (err) {
+  fs.open(path.resolve(`${__dirname}/test_result/${fileName}`), 'w', () => {
+    fs.writeFile(path.resolve(`${__dirname}/test_result/${fileName}`), resultInfo, function (err) {
       if (err) {
         return console.log(err)
       }
-      console.log('文件写入成功')
+      console.log(`文件写入成功,分析结果在${path.resolve(`${__dirname}/test_result/${fileName}`)}`)
     })
   })
 }
@@ -1011,7 +1011,7 @@ function compareTest(maxDepth = 4) {
   }
 }
 
-compareTest()
+compareTest(3)
 
 // const pos = new Pos(fens[6])
 // pos.changeSide()
@@ -1022,13 +1022,13 @@ compareTest()
 
 
 
-main('MinMax_test_result', MinMaxTest, 6)
-main('AlphaBeta_test_result', AlphaBeta.bind(null, -Infinity, Infinity), 7)
+main('MinMax_test_result', MinMaxTest, 2)
+main('AlphaBeta_test_result', AlphaBeta.bind(null, -Infinity, Infinity), 2)
 // main('NullMoveAlphaBeta_test_result', NullMoveAlphaBeta.bind(null, -Infinity, Infinity), 5)
-main('AlphaBetaWithHashTable_test_result', AlphaBetaWithHashTable.bind(null, -Infinity, Infinity), 7)
-main('AlphaBetaWithHashTable2_test_result', AlphaBetaWithHashTable2.bind(null, -Infinity, Infinity), 7)
-main('sortedMoveHashTable_test_result', sortedMoveHashTable.bind(null, -Infinity, Infinity), 8)
-main('PVS_test_result', PVS.bind(null, -Infinity, Infinity), 8)
+main('AlphaBetaWithHashTable_test_result', AlphaBetaWithHashTable.bind(null, -Infinity, Infinity), 2)
+main('AlphaBetaWithHashTable2_test_result', AlphaBetaWithHashTable2.bind(null, -Infinity, Infinity), 2)
+main('sortedMoveHashTable_test_result', sortedMoveHashTable.bind(null, -Infinity, Infinity), 2)
+main('PVS_test_result', PVS.bind(null, -Infinity, Infinity), 2)
 
 
 // console.log(MinMaxTest(new Sg_searchNode(),new Pos('1nbakabnr/r8/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/2N1C2C1/9/R1BAKABNR b'),5))

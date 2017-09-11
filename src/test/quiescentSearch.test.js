@@ -1,6 +1,6 @@
 const Pos = require('../core/position')
 const { checkmatedValue, winValue, banValue, drawValue } = require('../core/evaluate')
-const { HashTable, hashAlpha, hashBeta, hashExact } = require('./hashtable')
+const { HashTable, hashAlpha, hashBeta, hashExact } = require('../core/hashtable')
 const { Move } = require('../core/util')
 const {fens} = require('./testData')
 
