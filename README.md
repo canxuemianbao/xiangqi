@@ -2,7 +2,7 @@
 
 使用pvs实现的中国象棋
 
-# install
+## install
 npm install
 
 ## start
