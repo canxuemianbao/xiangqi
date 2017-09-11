@@ -16,12 +16,12 @@ let finish = false
 let playerTurn = pos.side === playerSide
 
 function canMove(move) {
-  const repValue = pos.repValue()
-
   //1. 已经结束了
   if (finish) {
     return false
   }
+
+  const repValue = pos.repValue()
 
   //2. 产生了结果（输，赢或者和棋）
   if (repValue) {
@@ -84,8 +84,6 @@ function display() {
     toastr.warning("将军")
   }
 
-  const repValue = pos.repValue()
-
   //2 判断是否结束了
 
   //2.1 将死了
@@ -99,6 +97,8 @@ function display() {
   }
 
   //2.2 长将
+  const repValue = pos.repValue()
+
   if (repValue) {
     if (repValue === banValue) {
       if (playerSide === pos.side) {
@@ -203,8 +203,10 @@ function setInterface(startHeight, startWidth, gapWidth, gapHeight) {
       document.getElementById('chessboard-container').appendChild(coordinate)
 
       coordinate.onclick = function () {
-        if (from != undefined) {
-          selectTo(this.pos)
+        if (playerTurn) {
+          if (from != undefined) {
+            selectTo(this.pos)
+          }
         }
       }
 
@@ -232,13 +234,16 @@ function setInterface(startHeight, startWidth, gapWidth, gapHeight) {
     chessDom.className = 'chess'
 
     chessDom.onclick = function (ev) {
-      if (this.side === pos.side) {
-        selectFrom(this.pos)
-      } else {
-        if (from) {
-          selectTo(this.pos)
+      if (playerTurn) {
+        if (this.side === pos.side) {
+          selectFrom(this.pos)
+        } else {
+          if (from) {
+            selectTo(this.pos)
+          }
         }
       }
+
       ev.stopPropagation()
     }
 
@@ -249,11 +254,9 @@ function setInterface(startHeight, startWidth, gapWidth, gapHeight) {
 window.onload = function () {
   setInterface(15, 15, 71, 71)
 
-  display()
-
   if (pos.side === playerSide) {
-    playerConsider()
+    display().then(playerConsider)
   } else {
-    computerConsider()
+    display().then(computerConsider)
   }
 }

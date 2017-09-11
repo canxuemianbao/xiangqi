@@ -1,4 +1,0 @@
-直接运行duan.exe即可。
-sixteen1.07为附带的引擎
-BOOK.DAT为开局库文件，与sixteen1.07放在同一目录下。
-logo.swf为一个flash文件，被duan.exe加载.
