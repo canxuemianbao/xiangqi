@@ -713,11 +713,7 @@ function PVS(initialAlpha = -Infinity, initialBeta = Infinity, sg_searchNode, po
     let lastGoodMv
     if (typeof previousScore === 'number') {
       sg_searchNode.hashNodes++
-      // if (pos.moveStack[0] && pos.moveStack[0].from === 55 && pos.moveStack[0].to === 54) {
-
-      // }else{
       return previousScore
-      // }
     } else if (previousScore instanceof Move) {
       lastGoodMv = previousScore
     }
@@ -1013,34 +1009,12 @@ function compareTest(maxDepth = 4) {
 
 compareTest(3)
 
-// const pos = new Pos(fens[6])
-// pos.changeSide()
-// console.log('AlphaBeta')
-// console.log(AlphaBeta(-Infinity, Infinity, new Sg_searchNode(), pos, 1))
-// console.log('AlphaBetaWithHashTable')
-// console.log(AlphaBetaWithHashTable(-Infinity, Infinity, new Sg_searchNode(), pos, 1))
-
-
 
 main('MinMax_test_result', MinMaxTest, 2)
 main('AlphaBeta_test_result', AlphaBeta.bind(null, -Infinity, Infinity), 2)
+//结果很奇怪，删除了空着裁剪的内容
 // main('NullMoveAlphaBeta_test_result', NullMoveAlphaBeta.bind(null, -Infinity, Infinity), 5)
 main('AlphaBetaWithHashTable_test_result', AlphaBetaWithHashTable.bind(null, -Infinity, Infinity), 2)
 main('AlphaBetaWithHashTable2_test_result', AlphaBetaWithHashTable2.bind(null, -Infinity, Infinity), 2)
 main('sortedMoveHashTable_test_result', sortedMoveHashTable.bind(null, -Infinity, Infinity), 2)
 main('PVS_test_result', PVS.bind(null, -Infinity, Infinity), 2)
-
-
-// console.log(MinMaxTest(new Sg_searchNode(),new Pos('1nbakabnr/r8/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/2N1C2C1/9/R1BAKABNR b'),5))
-
-// console.log( new Pos(fens[7]).piece.filter((pos,index)=>{
-//   if(index>=32){
-//     console.log(pos)
-//   }
-// }))
-
-// let pos = new Pos(fens[7])
-
-// console.log(sortedMoveHashTable(-Infinity, Infinity, new Sg_searchNode(), new Pos(fens[7]), 5))
-
-// main('iterateSortedHashTable', iterateSortedHashTable.bind(null, -Infinity, Infinity), 4)

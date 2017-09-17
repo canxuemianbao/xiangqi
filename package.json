@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "mocha ./src/test/*.test.js",
-    "start": "webpack -w"
+    "start": "webpack"
   },
   "author": "",
   "license": "ISC",

@@ -1,6 +1,7 @@
 const Pos = require('./position')
 const { checkmatedValue, winValue, banValue, drawValue } = require('./evaluate')
 const { HashTable, hashAlpha, hashBeta, hashExact } = require('./hashtable')
+const HistoryTable = require('./historytable')
 const { Move } = require('./util')
 
 //用于判断是否将死
@@ -47,10 +48,8 @@ const hashFakeDepth = 50
 
 let hashTable = new HashTable()
 let quiescentHashTable = new HashTable()
-let fullHistoryTable = Array.from(Array(256)).map(() => Array.from(Array(256)).map(() => 0))
-let quiescentHistoryTable = Array.from(Array(256)).map(() => Array.from(Array(256)).map(() => 0))
-let killerMove = []
-let quiescentKillerMove = []
+let historyTable = new HistoryTable()
+let quiescentHistoryTable = new HistoryTable()
 let isFinished = true
 let bestMove = null
 let searchDepth = 1
@@ -60,76 +59,11 @@ let searchDepth = 1
 function initial() {
   hashTable = new HashTable()
   quiescentHashTable = new HashTable()
-  fullHistoryTable = Array.from(Array(256)).map(() => Array.from(Array(256)).map(() => 0))
-  quiescentHistoryTable = Array.from(Array(256)).map(() => Array.from(Array(256)).map(() => 0))
-  killerMove = []
-  quiescentKillerMove = []
+  historyTable = new HistoryTable()
+  quiescentHistoryTable = new HistoryTable()
   isFinished = true
   searchDepth = 1
   bestMove = null
-}
-
-//对走法进行排序
-const sortingMoves = (hashMv, ply, historyTable = fullHistoryTable) => (move1, move2) => {
-  //置换表排序
-  if (move1 === hashMv) {
-    return -1
-  } else if (move2 === hashMv) {
-    return 1
-  }
-  else {
-    //按杀手1排序
-    if (killerMove[ply]) {
-      if (killerMove[ply][0] && killerMove[ply][0].equal(move1)) {
-        return -1
-      } else if (killerMove[ply][0] && killerMove[ply][0].equal(move2)) {
-        return 1
-      }
-
-      //按杀手2排序
-      if (killerMove[ply][1] && killerMove[ply][1].equal(move1)) {
-        return -1
-      } else if (killerMove[ply][1] && killerMove[ply][1].equal(move2)) {
-        return 1
-      }
-    }
-
-    //mvv/lva排序吃子走法
-    if (move1.wvl != null && move2.wvl != null) {
-      const gap = move1.wvl - move2.wvl
-      return gap > 0 ? -1 : gap === 0 ? 0 : 1
-    } else if (move1.wvl != null && move2.wvl == null) {
-      return -1
-    } else if (move2.wvl != null && move1.wvl == null) {
-      return 1
-    }
-
-    // 历史表排序不吃子走法
-    else {
-      const gap = historyTable[move1.from][move1.to] - historyTable[move2.from][move2.to]
-      return gap > 0 ? -1 : gap === 0 ? 0 : 1
-    }
-  }
-}
-
-//保存历史表走法，depth是向下的层数，ply是向上的层数
-function saveGoodMove(mv, depth, ply, historyTable = fullHistoryTable) {
-  historyTable[mv.from][mv.to] += depth
-
-  //防止溢出
-  if (historyTable[mv.from][mv.to] > 240) {
-    historyTable.forEach((row, from) => {
-      row.forEach((score, to) => {
-        historyTable[from][to] = score / 4
-      })
-    })
-  }
-
-  if (killerMove[ply] != null) {
-    killerMove[ply] = [mv, killerMove[ply][0]]
-  } else {
-    killerMove[ply] = [mv]
-  }
 }
 
 //静态搜索
@@ -179,7 +113,7 @@ function PVSQuiescentSearch(pos, finishTime, alpha = -Infinity, beta = Infinity)
   let bestScore = score
 
   //5. 生成能走的走法
-  let moves = pos.generateMoves().sort(sortingMoves(hashMv, ply, quiescentHistoryTable))
+  let moves = pos.generateMoves().sort(quiescentHistoryTable.sortingMoves(hashMv, ply))
 
   //5.1 是否被将军中
   const isChecked = pos.isChecked()
@@ -220,7 +154,7 @@ function PVSQuiescentSearch(pos, finishTime, alpha = -Infinity, beta = Infinity)
           //保存得分到置换表里
           quiescentHashTable.saveHashTable(zobrist, score, hashFakeDepth, hashBeta, move, ply)
           //保存走法到历史表里
-          saveGoodMove(move, 1, ply, quiescentHistoryTable)
+          quiescentHistoryTable.saveGoodMove(move, 1, ply)
           pos.unMakeMove()
           return score
         }
@@ -245,7 +179,7 @@ function PVSQuiescentSearch(pos, finishTime, alpha = -Infinity, beta = Infinity)
     if (exceedAlpha) {
       //7.1.1 至少走了一步吃子走法或者应将走法，则添加到历史表里
       if (bestMove) {
-        saveGoodMove(bestMove, 1, ply, quiescentHistoryTable)
+        quiescentHistoryTable.saveGoodMove(bestMove, 1, ply)
       }
       quiescentHashTable.saveHashTable(zobrist, bestScore, hashFakeDepth, hashExact, bestMove, ply)
       return bestScore
@@ -362,7 +296,7 @@ function PVS(pos, finishTime, alpha = -Infinity, beta = Infinity, depth, nullMov
   }
 
   //4. 根据置换表，杀手走法，历史表排序走法
-  const moves = pos.generateMoves().sort(sortingMoves(hashMv, ply))
+  const moves = pos.generateMoves().sort(historyTable.sortingMoves(hashMv, ply))
 
   //5. 按顺序进行pvs-alpha-beta算法
   let pvFlag = 0
@@ -395,7 +329,7 @@ function PVS(pos, finishTime, alpha = -Infinity, beta = Infinity, depth, nullMov
         //保存得分到置换表里
         hashTable.saveHashTable(zobrist, score, depth, hashBeta, move, ply)
         //保存走法到历史表里
-        saveGoodMove(move, depth, ply)
+        historyTable.saveGoodMove(move, depth, ply)
         return score
       }
 
@@ -432,7 +366,7 @@ function PVS(pos, finishTime, alpha = -Infinity, beta = Infinity, depth, nullMov
     //6.3.1走法是准确值，超过了初始alpha
     if (exceedAlpha) {
       //保存走法到历史表里
-      saveGoodMove(bestMove, depth, ply)
+      historyTable.saveGoodMove(bestMove, depth, ply)
       hashTable.saveHashTable(zobrist, bestScore, depth, hashExact, bestMove, ply)
       return bestScore
     }
